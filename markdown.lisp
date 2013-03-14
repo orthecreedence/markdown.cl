@@ -67,6 +67,19 @@
   (cl-ppcre:create-scanner "(\\n>.*?\\n(?=\\n(?!>)))" :case-insensitive-mode t :single-line-mode t)
   "A scanner for finding blockquotes.")
 
+(defparameter *scanner-blockquote*
+  (cl-ppcre:create-scanner "((\\n>[^\\n]*)+(?=\\n))" :case-insensitive-mode t :single-line-mode t)
+  "A scanner for finding blockquotes.")
+
+(defun format-blockquote (str)
+  (multiple-value-bind (start end)
+      (cl-ppcre:scan *scanner-blockquote* str)
+    (format t "lazy: ~a ~a~%" (- end start) (length str))
+    (let* ((str (cl-ppcre:regex-replace-all *scanner-format-blockquote* str "")))
+      (if start
+          str
+          (parse-string str :disable-parsers '(parse-lazy-blockquote))))))
+
 (defun parse-lazy-blockquote (str)
   (cl-ppcre:regex-replace-all *scanner-lazy-blockquote* str
     (lambda (match &rest regs)
@@ -74,13 +87,8 @@
       (let* ((regs (cddddr regs))
              (rs (car regs))
              (re (cadr regs))
-             (text (subseq str (aref rs 0) (aref re 0)))
-             (text (cl-ppcre:regex-replace-all *scanner-format-blockquote* text "")))
-        (concatenate 'string *nl* "<blockquote>" text "</blockquote>" *nl*)))))
-
-(defparameter *scanner-blockquote*
-  (cl-ppcre:create-scanner "((\\n>[^\\n]*)+(?=\\n))" :case-insensitive-mode t :single-line-mode t)
-  "A scanner for finding blockquotes.")
+             (text (subseq str (aref rs 0) (aref re 0))))
+        (concatenate 'string *nl* (format-blockquote text) *nl*)))))
 
 (defun parse-blockquote (str)
   (cl-ppcre:regex-replace-all *scanner-blockquote* str
@@ -89,9 +97,8 @@
       (let* ((regs (cddddr regs))
              (rs (car regs))
              (re (cadr regs))
-             (text (subseq str (aref rs 0) (aref re 0)))
-             (text (cl-ppcre:regex-replace-all *scanner-format-blockquote* str "")))
-        (concatenate 'string *nl* "<blockquote>" (parse-string text :disable-parsers '(parse-lazy-blockquote)) *nl* "</blockquote>")))))
+             (text (subseq str (aref rs 0) (aref re 0))))
+        (concatenate 'string *nl* (format-blockquote text)  *nl*)))))
 
 ;; -----------------------------------------------------------------------------
 ;; anchor formatting
@@ -193,7 +200,7 @@
 (defun pad-string (str padding)
   (concatenate 'string padding str padding))
 
-(defun parse-string (str)
+(defun parse-string (str &key disable-parsers)
   "Parse a markdown string into HTML."
   (let* ((str (prepare-markdown-string str))
          (handlers-pre-block '(
@@ -211,7 +218,8 @@
                                 parse-entities
                                 )))
     (dolist (handler handlers-pre-block)
-      (setf str (funcall handler str)))
+      (unless (find handler disable-parsers)
+        (setf str (funcall handler str))))
     ;(format t "str: ~s~%" str)
     (let ((blocks (split-blocks str))
           (new-blocks nil))
@@ -219,7 +227,8 @@
       (dolist (block blocks)
         (setf block (pad-string block *nl*))
         (dolist (handler handlers-post-block)
-          (setf block (funcall handler block)))
+          (unless (find handler disable-parsers)
+            (setf block (funcall handler block))))
         (setf block (string-trim #(#\newline) block))
         (push block new-blocks))
       (reduce (lambda (a b) (concatenate 'string a *nl* b)) (reverse new-blocks)))))
