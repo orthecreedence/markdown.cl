@@ -50,28 +50,27 @@
     (cl-ppcre:create-scanner "\\n\\n(( {8,}[^\\n]*\\n)+(?=\\n))" :single-line-mode t)
     str
     (lambda (match &rest regs)
-      (declare (ignore match))
       (let* ((regs (cddddr regs))
              (rs (car regs))
              (re (cadr regs))
-             (text (subseq str (aref rs 0) (aref re 0))))
-        (concatenate 'string "{{markdown.cl|newline}}<pre><code>" (format-code text :embedded t) "</code></pre>" *nl*)))))
+             (text (subseq match (aref rs 0) (aref re 0))))
+        (concatenate 'string "{{markdown.cl|newline}}{{markdown|newline}}<pre><code>" (format-code text :embedded t) "</code></pre>" *nl*)))))
 
 (defun parse-code (str)
   "Parses code sections in markdown."
   (let* ((scanner-in-code (cl-ppcre:create-scanner "^\\n+ {4,}" :single-line-mode t))
          (in-code (cl-ppcre:scan scanner-in-code str)))
-    (when in-code
-      (cl-ppcre:regex-replace-all
-        (cl-ppcre:create-scanner "\\n\\n(( {4,}[^\\n]*\\n)+(?=\\n))" :single-line-mode t)
-        str
-        (lambda (match &rest regs)
-          (declare (ignore match))
-          (let* ((regs (cddddr regs))
-                 (rs (car regs))
-                 (re (cadr regs))
-                 (text (subseq str (aref rs 0) (aref re 0))))
-            (concatenate 'string "{{markdown.cl|newline}}<pre><code>" (format-code text) "</code></pre>" *nl*)))))))
+    (if in-code
+        (cl-ppcre:regex-replace-all
+          (cl-ppcre:create-scanner "\\n\\n(( {4,}[^\\n]*\\n)+(?=\\n))" :single-line-mode t)
+          str
+          (lambda (match &rest regs)
+            (let* ((regs (cddddr regs))
+                   (rs (car regs))
+                   (re (cadr regs))
+                   (text (subseq match (aref rs 0) (aref re 0))))
+              (concatenate 'string "{{markdown.cl|newline}}<pre><code>" (format-code text) "</code></pre>" *nl*))))
+        str)))
 
 ;; -----------------------------------------------------------------------------
 ;; blockquote formatting
@@ -110,11 +109,10 @@
   "Parse a blockquote."
   (cl-ppcre:regex-replace-all re str
     (lambda (match &rest regs)
-      (declare (ignore match))
       (let* ((regs (cddddr regs))
              (rs (car regs))
              (re (cadr regs))
-             (text (subseq str (aref rs 0) (aref re 0))))
+             (text (subseq match (aref rs 0) (aref re 0))))
         (concatenate 'string *nl* (format-blockquote text) *nl*)))))
 
 (defun parse-standard-blockquote (str)
@@ -162,12 +160,11 @@
     (cl-ppcre:create-scanner "\\n\\s{0,3}([^\\n]+?)\\n(=+|-+)\\n" :case-insensitive-mode t :single-line-mode t)
     str
     (lambda (match &rest regs)
-      (declare (ignore match))
       (let* ((regs (cddddr regs))
              (rs (car regs))
              (re (cadr regs))
-             (type (aref (subseq str (aref rs 1) (aref re 1)) 0))
-             (text (subseq str (aref rs 0) (aref re 0))))
+             (type (aref (subseq match (aref rs 1) (aref re 1)) 0))
+             (text (subseq match (aref rs 0) (aref re 0))))
         (cond ((char= type #\=)
                (concatenate 'string *nl* *nl* "<h1>" text "</h1>" *nl* *nl* *nl*))
               ((char= type #\-)
@@ -182,13 +179,12 @@
     (cl-ppcre:create-scanner "\\n(#{1,6})\\s*(.+?)\\s*(#+)?\\n" :case-insensitive-mode t :single-line-mode t)
     str
     (lambda (match &rest regs)
-      (declare (ignore match))
       (let* ((regs (cddddr regs))
              (rs (car regs))
              (re (cadr regs))
              (num-hashes (- (aref re 0) (aref rs 0)))
              (tag (format nil "h~a" num-hashes))
-             (text (subseq str (aref rs 1) (aref re 1))))
+             (text (subseq match (aref rs 1) (aref re 1))))
         (concatenate 'string *nl* *nl* "<" tag ">" text "</" tag ">" *nl* *nl*)))
     :preserve-case t))
   
@@ -200,95 +196,166 @@
   "Format lists in paragraph style to be normalized so they aren't chopped up by
    the rest of the parsing."
   (let* ((scanner-format-p-lists (cl-ppcre:create-scanner
-                                   "(\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+)\\n\\s*\\n {4,}(?!( |\\n))"
+               "(\\n\\s{0,3}([*+-]|[0-9]+\\. )(([^\\n]+\\n)+|\\n))\\s*\\n {4,}(?!( |\\n))"
                                    :single-line-mode t))
          (scanner-join-p-lists (cl-ppcre:create-scanner
-                                 ;; TODO make it wurkkkk
-                                 "(\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+)\\n(?=\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+)"
+                                 ;"((\\n\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n])+\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+)"
+                                 "((\\n\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+){2,})"
                                  :single-line-mode t))
          (str (if join-list-items
-                  (cl-ppcre:regex-replace-all scanner-join-p-lists str "")
+                  (cl-ppcre:regex-replace-all
+                    scanner-join-p-lists
+                    str
+                    (lambda (match &rest regs)
+                      (let* ((regs (cddddr regs))
+                             (rs (car regs))
+                             (re (cadr regs))
+                             (text (subseq match (aref rs 0) (aref re 0)))
+                             (newline-split (cl-ppcre:create-scanner "\\n\\n(?=([*+-]|[0-9]+\\. ))" :single-line-mode t))
+                             (parts (cl-ppcre:split newline-split text)))
+                        (reduce (lambda (a b)
+                                  (concatenate 'string *nl* a b "{{markdown.cl|paragraph}}" *nl*))
+                                parts))))
                   str))
-         (str-formatted (cl-ppcre:regex-replace-all scanner-format-p-lists str "\\1{{markdown.cl|pragraph}}")))
+         (str-formatted (cl-ppcre:regex-replace-all scanner-format-p-lists str "\\1{{markdown.cl|paragraph}}")))
     (if (= (length str) (length str-formatted))
         str-formatted
         (pre-format-paragraph-lists str-formatted nil))))
 
-(defun pre-format-lists (str)
-  "Run bullets/lists through some normalization filters to make them easier to
-   parse."
+;(let* ((str (format nil "~
+;-  bullet1 is a great bullet
+;  - fuck this shit
+;- bullet 2 is ucking grand
+;-   this is a list item with multiple paragraphs
+;
+;    here it is again
+;
+;    another paragraph
+;- bullet 3
+;is a lazy piece of shit!!
+;omg poop
+;
+;1. hai
+;2. number list!!
+;
+;-and another
+;here's a test
+;
+;    multi-paragraph list
+;
+;    item
+;
+;
+;- paragraph
+;
+;- list
+;
+;- items
+;
+;"))
+;       (str (prepare-markdown-string str))
+;       (scanner (cl-ppcre:create-scanner "((\\n\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+){2,})" :single-line-mode t)))
+;  (if nil
+;      (cl-ppcre:scan-to-strings scanner str)
+;      (let* ((str (pre-format-paragraph-lists str))
+;             (str (normalize-lists str))
+;             )
+;        str)))
+
+(defun join-list-lines (str)
+  "Turns lists broken into multiple lines into (per item) so that there's one
+   line per item:
+   
+   - my list item
+   broken into multiple
+   lines
+   
+   becomes
+   
+   - my list item broken into multiple lines"
   (let* ((scanner-join (cl-ppcre:create-scanner
-                         "(\\n\\s*([*+-]|[0-9]+\\. )[^\\n]+)\\n\\s*(?!(\\n|([*+-]|[0-9]+\\. )| {8, }))"
+                         ;"(\\n\\s*([*+-]|[0-9]+\\. )[^\\n]+)\\n\\s*(?!(\\n|([*+-]|[0-9]+\\. )| {8, }))"
+                         ;"((\\n\\s*([*+-]|[0-9]+\\. )[^\\n]+)(\\n(?!\\s*([*+-]|[0-9]+\\. ))\\s*[^ \\n]+)+)"
+                         "(\\n\\s*([*+-]|[0-9]+\\. )[^\\n]+)\\n\\s*(?!\\s*([*+-]|[0-9]+\\. ))"
                          :single-line-mode t))
-         (scanner-normalize-ul (cl-ppcre:create-scanner "(\\n\\s*)[*+-]\\s+" :single-line-mode t))
+         (multiple-lines-p (cl-ppcre:scan scanner-join str)))
+    (if multiple-lines-p
+        (let ((str (cl-ppcre:regex-replace-all scanner-join str "\\1 ")))
+          (join-list-lines str))
+        str)))
+
+(defun normalize-lists (str)
+  "Run bullets/lists through some normalization filters to make them easier to
+   parse. Numbered lists are converted to +, regular bullets converted to -.
+   This greatly simplifies parsing later on."
+  (let* ((scanner-normalize-ul (cl-ppcre:create-scanner "(\\n\\s*)[*+-]\\s+" :single-line-mode t))
          (scanner-normalize-ol (cl-ppcre:create-scanner "(\\n\\s*)[0-9]+\\.\\s+" :single-line-mode t))
-         (str (cl-ppcre:regex-replace-all scanner-join str "\\1 "))
+         (str (join-list-lines str))
          (str (cl-ppcre:regex-replace-all scanner-normalize-ul str "\\1-"))
-         (str (cl-ppcre:regex-replace-all scanner-normalize-ol str
-                (lambda (match &rest regs)
-                  (let* ((regs (cddddr regs))
-                         (rs (car regs))
-                         (re (cadr regs)))
-                    (concatenate 'string (subseq str (aref rs 0) (aref re 0)) "1. "))))))
+         (str (cl-ppcre:regex-replace-all scanner-normalize-ol str "\\1+")))
     str))
 
-(let* ((str (format nil "~
--  bullet1
-   is a great bullet
-  - fuck this shit
-- bullet 2 is ucking grand
--   this is a list item with multiple paragraphs
+(defun format-lists (str &key (type :ul))
+  (flet ((build-splitter (indent)
+           (cl-ppcre:create-scanner
+             (format nil "^ {~a}[+-]" indent)
+             :multi-line-mode t)))
+    (let* ((str (string-trim #(#\newline) str))
+           (indent (position-if (lambda (c)
+                                  (or (char= c #\-)
+                                      (char= c #\+))) str))
+           (parts (cl-ppcre:split (build-splitter indent) str))
+           (parts (remove "" parts :test #'string=)))
+      (concatenate 'string
+                   *nl*
+                   (if (eq type :ul) "<ul>" "<ol>")
+                   *nl*
+                   "<li>"
+                   *nl*
+                   (reduce (lambda (a b)
+                             (concatenate 'string *nl* a *nl* "</li>" *nl* "<li>" *nl* b ))
+                           parts)
+                   *nl*
+                   "</li>"
+                   *nl*
+                   (if (eq type :ul) "</ul>" "</ol>")
+                   *nl*))))
 
-    here it is again
+(defparameter *scanner-block-has-ul*
+  (cl-ppcre:create-scanner "\\n\\s*-[^\\n]+" :single-line-mode t)
+  "Detects if a block has a ul section.")
 
-    another paragraph...my god, it doesn't end!!
-- bullet 3
-is a lazy piece of shit!!
-"))
-       (str (prepare-markdown-string str)))
-  (let* ((str (pre-format-paragraph-lists str))
-         (str (pre-format-lists str)))
-    str))
+(defparameter *scanner-block-has-ol*
+  (cl-ppcre:create-scanner "\\n\\s*\\+[^\\n]+" :single-line-mode t)
+  "Detects if a block has a ol section.")
 
-;; BROKEN TO ALL SHIT
-(defun parse-lists (str)
-  (let* ((str (string-trim #(#\newline) str))
-         (indent (position-if (lambda (c)
-                                (or (char= c #\-)
-                                    (char= c #\*)
-                                    (char= c #\+))) str))
-         (str (string-left-trim #(#\space #\- #\* #\+ #\tab) str))
-         (str (concatenate 'string *nl* "<ul><li>" str "</li></ul>" *nl*)))
-    (let* ((re (format nil "lol\\s{~a}[-+\\*]\\s*([^\\n]+)" indent))
-           (scanner (cl-ppcre:create-scanner re :case-insensitive-mode t :single-line-mode t)))
-      (format t "re: ~s~%" re)
-      (format t "rep: ~s~%" (cl-ppcre:regex-replace-all scanner str "\\1</li><li>"))))
-  "")
-
-(defparameter *scanner-ul*
-  (cl-ppcre:create-scanner "((\\n\\s*[-+\\*]\\s?.+?(?=(\\n\\n|\\n(?!\\s+))))+)" :case-insensitive-mode t :single-line-mode t)
-  "A scanner for unordered lists.")
-
-(defparameter *scanner-normalize-lists*
-  (cl-ppcre:create-scanner "(\\n\\s*-[^\\n]+)\\n(?!\\s*-)" :case-insensitive-mode t :single-line-mode t)
-  "A scanner that makes multi-line (lazy) list items into one line for easier parsing.")
-
-(defun parse-ul (str)
-  (let* ((is-ul t)
-         (str nil)))
-  (cl-ppcre:regex-replace-all *scanner-ul* str
-    (lambda (match &rest regs)
-      (declare (ignore match))
-      (let* ((regs (cddddr regs))
-             (rs (car regs))
-             (re (cadr regs))
-             (text (subseq str (aref rs 0) (aref re 0))))
-        ;(parse-lists text)
-        "")))
-  str)
+(defun parse-list-blocks (str)
+  (let* ((ul-pos (cl-ppcre:scan *scanner-block-has-ul* str))
+         (ol-pos (cl-ppcre:scan *scanner-block-has-ol* str)))
+    (cond ((and ul-pos
+                ol-pos
+                (zerop ul-pos))
+           (let ((ul-text (subseq str 0 ol-pos))
+                 (rest-text (subseq str ol-pos)))
+             (concatenate 'string (format-lists ul-text :type :ul) *nl* (parse-list-blocks rest-text))))
+          ((and ol-pos
+                ul-pos
+                (zerop ol-pos))
+           (let ((ol-text (subseq str 0 ul-pos))
+                 (rest-text (subseq str ul-pos)))
+             (concatenate 'string (format-lists ol-text :type :ol) *nl* (parse-list-blocks rest-text))))
+          ((or (and ul-pos (zerop ul-pos))
+               (and ol-pos (zerop ol-pos)))
+           (format-lists str :type (if ol-pos :ol :ul)))
+          (t str))))
 
 (defun parse-ol (str)
   str)
+
+(defun parse-lists (str)
+  (let* ((str (normalize-lists str))
+         (str (parse-list-blocks str)))
+    str))
 
 ;; -----------------------------------------------------------------------------
 ;; general markdown functions
@@ -319,7 +386,6 @@ is a lazy piece of shit!!
                                parse-setext-headers
                                parse-embedded-code
                                pre-format-paragraph-lists
-                               pre-format-lists
                                ))
          (handlers-post-block '(
                                 parse-lazy-blockquote
@@ -327,8 +393,7 @@ is a lazy piece of shit!!
                                 parse-code
                                 parse-links
                                 parse-paragraphs
-                                parse-ul
-                                parse-ol
+                                parse-lists
                                 parse-entities
                                 )))
     (dolist (handler handlers-pre-block)
@@ -337,7 +402,7 @@ is a lazy piece of shit!!
     ;(format t "str: ~s~%" str)
     (let ((blocks (split-blocks str))
           (new-blocks nil))
-      (format t "blocks: ~s~%" blocks)
+      ;(format t "blocks: ~s~%" blocks)
       (dolist (block blocks)
         (setf block (pad-string block *nl*))
         (dolist (handler handlers-post-block)
@@ -353,6 +418,7 @@ is a lazy piece of shit!!
     (parse-string contents)))
 
 (defun test (&optional show)
+  (format t "--------------~%")
   (let* ((str (format nil "~
 header1
 ====
