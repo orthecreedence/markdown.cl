@@ -196,7 +196,7 @@
   "Format lists in paragraph style to be normalized so they aren't chopped up by
    the rest of the parsing."
   (let* ((scanner-format-p-lists (cl-ppcre:create-scanner
-               "(\\n\\s{0,3}([*+-]|[0-9]+\\. )(([^\\n]+\\n)+|\\n))\\s*\\n {4,}(?!( |\\n))"
+                                   "(\\n\\s{0,3}([*+-]|[0-9]+\\. )(([^\\n]+\\n)+|\\n))\\s*\\n {4,}(?!( |\\n))"
                                    :single-line-mode t))
          (scanner-join-p-lists (cl-ppcre:create-scanner
                                  ;"((\\n\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n])+\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+)"
@@ -222,45 +222,47 @@
         str-formatted
         (pre-format-paragraph-lists str-formatted nil))))
 
-;(let* ((str (format nil "~
-;-  bullet1 is a great bullet
-;  - fuck this shit
-;- bullet 2 is ucking grand
-;-   this is a list item with multiple paragraphs
-;
-;    here it is again
-;
-;    another paragraph
-;- bullet 3
-;is a lazy piece of shit!!
-;omg poop
-;
-;1. hai
-;2. number list!!
-;
-;-and another
-;here's a test
-;
-;    multi-paragraph list
-;
-;    item
-;
-;
-;- paragraph
-;
-;- list
-;
-;- items
-;
-;"))
-;       (str (prepare-markdown-string str))
-;       (scanner (cl-ppcre:create-scanner "((\\n\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+){2,})" :single-line-mode t)))
-;  (if nil
-;      (cl-ppcre:scan-to-strings scanner str)
-;      (let* ((str (pre-format-paragraph-lists str))
-;             (str (normalize-lists str))
-;             )
-;        str)))
+(defun test-list (&optional return)
+  (let* ((str (format nil "~
+-  bullet1 is a great bullet
+  - fuck this shit
+  1. number next
+- bullet 2 is ucking grand
+-   this is a list item with multiple paragraphs
+
+    here it is again
+
+    another paragraph
+- bullet 3
+is a lazy piece of shit!!
+omg poop
+
+1. hai
+2. number list!!
+
+-and another
+here's a test
+
+    multi-paragraph list
+
+    item
+
+
+- paragraph
+
+- list
+
+- items
+
+"))
+         (str (prepare-markdown-string str))
+         (scanner (cl-ppcre:create-scanner "((\\n\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+){2,})" :single-line-mode t)))
+    (if nil
+        (cl-ppcre:scan-to-strings scanner str)
+        (let* ((str (pre-format-paragraph-lists str))
+               (str (parse-lists str))
+               )
+          (when return str)))))
 
 (defun join-list-lines (str)
   "Turns lists broken into multiple lines into (per item) so that there's one
@@ -305,7 +307,8 @@
                                   (or (char= c #\-)
                                       (char= c #\+))) str))
            (parts (cl-ppcre:split (build-splitter indent) str))
-           (parts (remove "" parts :test #'string=)))
+           (parts (remove "" parts :test #'string=))
+           (parts (append parts '(nil))))
       (concatenate 'string
                    *nl*
                    (if (eq type :ul) "<ul>" "<ol>")
@@ -313,7 +316,15 @@
                    "<li>"
                    *nl*
                    (reduce (lambda (a b)
-                             (concatenate 'string *nl* a *nl* "</li>" *nl* "<li>" *nl* b ))
+                             (when a
+                               (setf a (cl-ppcre:regex-replace
+                                         (cl-ppcre:create-scanner "\\n(?=\\s*[+-])" :single-line-mode t)
+                                         a
+                                         (concatenate 'string *nl* *nl*))))
+                             (let ((a (parse-lists a :normalize nil)))
+                               (if b
+                                   (concatenate 'string *nl*  *nl* "</li>" *nl* "<li>" *nl* b )
+                                   a)))
                            parts)
                    *nl*
                    "</li>"
@@ -332,6 +343,25 @@
 (defun parse-list-blocks (str)
   (let* ((ul-pos (cl-ppcre:scan *scanner-block-has-ul* str))
          (ol-pos (cl-ppcre:scan *scanner-block-has-ol* str)))
+
+    (when (or (and ul-pos (zerop ul-pos) ol-pos)
+              (and ol-pos (zerop ol-pos) ul-pos))
+      (flet ((get-list-indent (pos)
+               (when pos
+                 (let ((test (subseq str pos)))
+                   (- (length test)
+                      (1+ (length (string-left-trim #(#\newline #\space) test))))))))
+        (let ((ul-indent (get-list-indent ul-pos))
+              (ol-indent (get-list-indent ol-pos)))
+          (loop while (if (zerop ul-pos)
+                          (and ol-pos ol-indent (not (= ol-indent ul-indent)))
+                          (and ul-pos ul-indent (not (= ul-indent ol-indent)))) do
+            (if (zerop ul-pos)
+                (setf ol-pos (cl-ppcre:scan *scanner-block-has-ol* str :start (1+ ol-pos))
+                      ol-indent (get-list-indent ol-pos))
+                (setf ul-pos (cl-ppcre:scan *scanner-block-has-ol* str :start (1+ ul-pos))
+                      ul-indent (get-list-indent ul-pos)))))))
+
     (cond ((and ul-pos
                 ol-pos
                 (zerop ul-pos))
@@ -347,13 +377,23 @@
           ((or (and ul-pos (zerop ul-pos))
                (and ol-pos (zerop ol-pos)))
            (format-lists str :type (if ol-pos :ol :ul)))
+          (ul-pos
+           (let ((garble (subseq str 0 ul-pos))
+                 (ul-text (subseq str ul-pos)))
+             (concatenate 'string garble (parse-list-blocks ul-text))))
+          (ol-pos
+           (let ((garble (subseq str 0 ol-pos))
+                 (ol-text (subseq str ol-pos)))
+             (concatenate 'string garble (parse-list-blocks ol-text))))
           (t str))))
 
 (defun parse-ol (str)
   str)
 
-(defun parse-lists (str)
-  (let* ((str (normalize-lists str))
+(defun parse-lists (str &key (normalize t))
+  (let* ((str (if normalize
+                  (normalize-lists str)
+                  str))
          (str (parse-list-blocks str)))
     str))
 
@@ -429,6 +469,7 @@ this is a paragraph
 * some bullets
 + are good
   - and dont confuse parsers
+  - lol sub bullets
 - for formatting
   because they wurklol
 
