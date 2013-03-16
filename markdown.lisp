@@ -226,7 +226,6 @@
   (let* ((str (format nil "~
 -  bullet1 is a great bullet
   - fuck this shit
-  1. number next
 - bullet 2 is ucking grand
 -   this is a list item with multiple paragraphs
 
@@ -255,14 +254,26 @@ here's a test
 - items
 
 "))
-         (str (prepare-markdown-string str))
-         (scanner (cl-ppcre:create-scanner "((\\n\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+){2,})" :single-line-mode t)))
-    (if nil
-        (cl-ppcre:scan-to-strings scanner str)
-        (let* ((str (pre-format-paragraph-lists str))
-               (str (parse-lists str))
-               )
-          (when return str)))))
+         (str (prepare-markdown-string str)))
+    (let* ((block-parse t)
+           (str (pre-format-paragraph-lists str)))
+      (if block-parse
+          (let* ((blocks (split-blocks str))
+                 ;(blocks (remove-if 
+                 (new-blocks nil))
+            (dolist (block blocks)
+              (let* ((block (prepare-markdown-string block))
+                     (parsed (parse-lists block)))
+                (format t "~s~%---~%" block)
+                ;(format t "parsed: ~a~%" parsed)
+                (push parsed new-blocks)))
+            (when return
+              ;(reduce (lambda (a b) (concatenate 'string a *nl* b)) (reverse new-blocks))
+              (reverse new-blocks)
+              ))
+          (let ((str (parse-lists str)))
+            (when return
+              str))))))
 
 (defun join-list-lines (str)
   "Turns lists broken into multiple lines into (per item) so that there's one
@@ -297,103 +308,150 @@ here's a test
          (str (cl-ppcre:regex-replace-all scanner-normalize-ol str "\\1+")))
     str))
 
-(defun format-lists (str &key (type :ul))
+(defparameter *list-recursion-level* 0)
+
+(defun format-lists (str indent)
+  (incf *list-recursion-level*)
+  (when (< *list-recursion-level* 20)
+    (decf *list-recursion-level*)
+    (return-from format-lists str))
   (flet ((build-splitter (indent)
            (cl-ppcre:create-scanner
              (format nil "^ {~a}[+-]" indent)
              :multi-line-mode t)))
     (let* ((str (string-trim #(#\newline) str))
-           (indent (position-if (lambda (c)
-                                  (or (char= c #\-)
-                                      (char= c #\+))) str))
+           (type-char (find-if (lambda (c)
+                                 (or (char= c #\-)
+                                     (char= c #\+))) str))
+           (type (if (eq type-char #\-)
+                     :ul
+                     :ol))
            (parts (cl-ppcre:split (build-splitter indent) str))
-           (parts (remove "" parts :test #'string=))
-           (parts (append parts '(nil))))
-      (concatenate 'string
-                   *nl*
-                   (if (eq type :ul) "<ul>" "<ol>")
-                   *nl*
-                   "<li>"
-                   *nl*
-                   (reduce (lambda (a b)
-                             (when a
-                               (setf a (cl-ppcre:regex-replace
-                                         (cl-ppcre:create-scanner "\\n(?=\\s*[+-])" :single-line-mode t)
-                                         a
-                                         (concatenate 'string *nl* *nl*))))
-                             (let ((a (parse-lists a :normalize nil)))
-                               (if b
-                                   (concatenate 'string *nl*  *nl* "</li>" *nl* "<li>" *nl* b )
-                                   a)))
-                           parts)
-                   *nl*
-                   "</li>"
-                   *nl*
-                   (if (eq type :ul) "</ul>" "</ol>")
-                   *nl*))))
+           (parts (remove "" parts :test #'string=)))
+      ;(format t "str (~a): ~a~%" indent str)
+      (format t "parts (~a): ~s~%" *list-recursion-level* parts)
+      ;(return-from format-lists str)
+      (prog1
+        (concatenate 'string
+                     *nl*
+                     (if (eq type :ul) "<ul>" "<ol>")
+                     *nl*
+                     "<li>"
+                     *nl*
+                     (reduce (lambda (a b)
+                               (when b
+                                 (setf b (cl-ppcre:regex-replace
+                                           (cl-ppcre:create-scanner "\\n(?=\\s*[+-])" :single-line-mode t)
+                                           b
+                                           (concatenate 'string *nl* *nl*))
+                                       ;b (concatenate 'string *nl* b)
+                                       b (parse-lists b)))
 
-(defparameter *scanner-block-has-ul*
-  (cl-ppcre:create-scanner "\\n\\s*-[^\\n]+" :single-line-mode t)
+                               (concatenate 'string *nl* a *nl* "</li>" *nl* "<li>" *nl* b))
+                             parts :initial-value nil)
+                     *nl*
+                     "</li>"
+                     *nl*
+                     (if (eq type :ul) "</ul>" "</ol>")
+                     *nl*)
+        (decf *list-recursion-level*)))))
+
+(defparameter *scanner-block-list-pos*
+  (cl-ppcre:create-scanner "(^|(?<=\\n))\\s*[+-][^\\n]+" :single-line-mode t)
   "Detects if a block has a ul section.")
 
-(defparameter *scanner-block-has-ol*
-  (cl-ppcre:create-scanner "\\n\\s*\\+[^\\n]+" :single-line-mode t)
-  "Detects if a block has a ol section.")
-
 (defun parse-list-blocks (str)
-  (let* ((ul-pos (cl-ppcre:scan *scanner-block-has-ul* str))
-         (ol-pos (cl-ppcre:scan *scanner-block-has-ol* str)))
+  (let ((list-pos (cl-ppcre:scan *scanner-block-list-pos* str)))
 
-    (when (or (and ul-pos (zerop ul-pos) ol-pos)
-              (and ol-pos (zerop ol-pos) ul-pos))
-      (flet ((get-list-indent (pos)
-               (when pos
-                 (let ((test (subseq str pos)))
-                   (- (length test)
-                      (1+ (length (string-left-trim #(#\newline #\space) test))))))))
-        (let ((ul-indent (get-list-indent ul-pos))
-              (ol-indent (get-list-indent ol-pos)))
-          (loop while (if (zerop ul-pos)
-                          (and ol-pos ol-indent (not (= ol-indent ul-indent)))
-                          (and ul-pos ul-indent (not (= ul-indent ol-indent)))) do
-            (if (zerop ul-pos)
-                (setf ol-pos (cl-ppcre:scan *scanner-block-has-ol* str :start (1+ ol-pos))
-                      ol-indent (get-list-indent ol-pos))
-                (setf ul-pos (cl-ppcre:scan *scanner-block-has-ol* str :start (1+ ul-pos))
-                      ul-indent (get-list-indent ul-pos)))))))
+    (unless list-pos
+      (return-from parse-list-blocks str))
 
-    (cond ((and ul-pos
-                ol-pos
-                (zerop ul-pos))
-           (let ((ul-text (subseq str 0 ol-pos))
-                 (rest-text (subseq str ol-pos)))
-             (concatenate 'string (format-lists ul-text :type :ul) *nl* (parse-list-blocks rest-text))))
-          ((and ol-pos
-                ul-pos
-                (zerop ol-pos))
-           (let ((ol-text (subseq str 0 ul-pos))
-                 (rest-text (subseq str ul-pos)))
-             (concatenate 'string (format-lists ol-text :type :ol) *nl* (parse-list-blocks rest-text))))
-          ((or (and ul-pos (zerop ul-pos))
-               (and ol-pos (zerop ol-pos)))
-           (format-lists str :type (if ol-pos :ol :ul)))
-          (ul-pos
-           (let ((garble (subseq str 0 ul-pos))
-                 (ul-text (subseq str ul-pos)))
-             (concatenate 'string garble (parse-list-blocks ul-text))))
-          (ol-pos
-           (let ((garble (subseq str 0 ol-pos))
-                 (ol-text (subseq str ol-pos)))
-             (concatenate 'string garble (parse-list-blocks ol-text))))
-          (t str))))
+    (let* ((indent (position-if (lambda (c)
+                                  (or (char= c #\-)
+                                      (char= c #\+)))
+                                str
+                                :start (or list-pos 0)))
+           (indent (if indent
+                       (- indent list-pos)
+                       0))
+           (type-char (find-if (lambda (c)
+                                 (or (char= c #\-)
+                                     (char= c #\+)))
+                            str
+                            :start (or list-pos 0)))
+           (split-type-char (if (char= (or type-char #\space) #\-)
+                                "\\+"
+                                "-"))
+           (section-splitter (cl-ppcre:create-scanner 
+                       (format nil "^(?= {~a}~a)" indent split-type-char)
+                       :multi-line-mode t))
+           (parts (cl-ppcre:split section-splitter str :limit 1))
+           (new-parts nil))
+      (dolist (str parts)
+        ;(format t "part: ~s~%" parts)
+        (let ((part (cond ((and list-pos (zerop list-pos))
+                           (concatenate 'string
+                                        (format-lists str indent)))
+                          (list-pos
+                            (let ((garble (subseq str 0 list-pos))
+                                  (list-text (subseq str list-pos)))
+                              (concatenate 'string garble (parse-list-blocks list-text))))
+                          (t str))))
+          (push part new-parts)))
+      (reduce (lambda (a b) (concatenate 'string a b)) (reverse new-parts)))))
+
+;(defun parse-list-blocks_ (str)
+;  (let* ((ul-pos (cl-ppcre:scan *scanner-block-has-ul* str))
+;         (ol-pos (cl-ppcre:scan *scanner-block-has-ol* str)))
+;
+;    (when (or (and ul-pos (zerop ul-pos) ol-pos)
+;              (and ol-pos (zerop ol-pos) ul-pos))
+;      (flet ((get-list-indent (pos)
+;               (when pos
+;                 (let ((test (subseq str pos)))
+;                   (- (length test)
+;                      (1+ (length (string-left-trim #(#\newline #\space) test))))))))
+;        (let ((ul-indent (get-list-indent ul-pos))
+;              (ol-indent (get-list-indent ol-pos)))
+;          (loop while (if (and ul-pos (zerop ul-pos))
+;                          (and ol-pos ol-indent (not (= ol-indent ul-indent)))
+;                          (and ul-pos ul-indent (not (= ul-indent ol-indent)))) do
+;            (if (zerop ul-pos)
+;                (setf ol-pos (cl-ppcre:scan *scanner-block-has-ol* str :start (1+ ol-pos))
+;                      ol-indent (get-list-indent ol-pos))
+;                (setf ul-pos (cl-ppcre:scan *scanner-block-has-ol* str :start (1+ ul-pos))
+;                      ul-indent (get-list-indent ul-pos)))))))
+;
+;    (cond ((and ul-pos
+;                ol-pos
+;                (zerop ul-pos))
+;           (let ((ul-text (subseq str 0 ol-pos))
+;                 (rest-text (subseq str ol-pos)))
+;             (concatenate 'string (format-lists ul-text :type :ul) *nl* (parse-list-blocks rest-text))))
+;          ((and ol-pos
+;                ul-pos
+;                (zerop ol-pos))
+;           (let ((ol-text (subseq str 0 ul-pos))
+;                 (rest-text (subseq str ul-pos)))
+;             (concatenate 'string (format-lists ol-text :type :ol) *nl* (parse-list-blocks rest-text))))
+;          ((or (and ul-pos (zerop ul-pos))
+;               (and ol-pos (zerop ol-pos)))
+;           (format-lists str :type (if ol-pos :ol :ul)))
+;          (ul-pos
+;           (let ((garble (subseq str 0 ul-pos))
+;                 (ul-text (subseq str ul-pos)))
+;             (concatenate 'string garble (parse-list-blocks ul-text))))
+;          (ol-pos
+;           (let ((garble (subseq str 0 ol-pos))
+;                 (ol-text (subseq str ol-pos)))
+;             (concatenate 'string garble (parse-list-blocks ol-text))))
+;          (t str))))
 
 (defun parse-ol (str)
   str)
 
-(defun parse-lists (str &key (normalize t))
-  (let* ((str (if normalize
-                  (normalize-lists str)
-                  str))
+(defun parse-lists (str)
+  (let* ((str (normalize-lists (normalize-lists str)))
          (str (parse-list-blocks str)))
     str))
 
