@@ -26,6 +26,14 @@
     str))
 
 ;; -----------------------------------------------------------------------------
+;; entity parsing
+;; -----------------------------------------------------------------------------
+(defun parse-horizontal-rule (str)
+  "Make horizontal rules."
+  (let* ((scanner-hr (cl-ppcre:create-scanner "^([*_-] ?){3,}$" :multi-line-mode t)))
+    (cl-ppcre:regex-replace-all scanner-hr str "<hr>")))
+
+;; -----------------------------------------------------------------------------
 ;; code formatting
 ;; -----------------------------------------------------------------------------
 (defun format-code (str &key embedded)
@@ -136,6 +144,27 @@
    Lazy blockquotes are not allowed to nest other blockquotes."
   (parse-blockquote str *scanner-lazy-blockquote*))
 
+(defun parse-embedded-blockquote (str)
+  "Parse blockquotes that occur inside a list."
+  (let ((scanner-find-list-blockquote (cl-ppcre:create-scanner
+                                        "(\\n([*+-]|[0-9]+\\. )[^\\n]+)\\n((\\n\\s{4}>[^\\n]+)+)"
+                                        :single-line-mode t))
+        (scanner-format-blockquote (cl-ppcre:create-scanner
+                                     "^\\s+>"
+                                     :multi-line-mode t)))
+    (cl-ppcre:regex-replace-all
+      scanner-find-list-blockquote
+      str
+      (lambda (match &rest regs)
+        (let* ((regs (cddddr regs))
+               (rs (car regs))
+               (re (cadr regs))
+               (bullet (subseq match (aref rs 0) (aref re 0)))
+               (blockquote (subseq match (aref rs 2) (aref re 2)))
+               (blockquote (cl-ppcre:regex-replace-all scanner-format-blockquote blockquote ">"))
+               (blockquote (concatenate 'string *nl* blockquote)))
+          (concatenate 'string bullet (parse-standard-blockquote blockquote)))))))
+
 ;; -----------------------------------------------------------------------------
 ;; anchor formatting
 ;; -----------------------------------------------------------------------------
@@ -145,8 +174,75 @@
 ;; -----------------------------------------------------------------------------
 ;; paragraph formatting
 ;; -----------------------------------------------------------------------------
-(defun parse-paragraphs (str)
-  str)
+(defparameter *scanner-find-first-html-block-element*
+  (cl-ppcre:create-scanner "<(address|article|aside|audio|blockquote|canvas|dd|
+div|dl|fieldset|figcaption|figure|footer|form|h1|h2|h3|h4|h5|h6|header|hgroup|
+hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)( [a-z]+(=\"[^\"]+\")?)*>"
+    :extended-mode t
+    :single-line-mode t)
+  "A scanner that searches for HTML elements that are not inline.")
+
+(defparameter *scanner-find-last-html-block-element*
+  (cl-ppcre:create-scanner "</(address|article|aside|audio|blockquote|canvas|dd|
+div|dl|fieldset|figcaption|figure|footer|form|h1|h2|h3|h4|h5|h6|header|hgroup|
+hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>.*?$"
+    :extended-mode t
+    :single-line-mode t)
+  "A scanner that searches for HTML elements that are not inline.")
+
+(defun format-html-blocks-in-paragraph (str)
+  (let* ((pos-block-el-start (cl-ppcre:scan *scanner-find-first-html-block-element* str))
+         (pos-block-el-end (cl-ppcre:scan *scanner-find-last-html-block-element* str)))
+    (if (and pos-block-el-start pos-block-el-end
+             (< pos-block-el-start pos-block-el-end))
+        (let* ((pos-block-el-end (1+ (position #\> str :start (1+ pos-block-el-end))))
+               (str (concatenate 'string
+                                 (subseq str 0 pos-block-el-end)
+                                 "{{markdown.cl|newline}}{{markdown.cl|paragraph|open}}"
+                                 (subseq str pos-block-el-end)))
+               (str (concatenate 'string
+                                 (subseq str 0 pos-block-el-start)
+                                 "{{markdown.cl|paragraph|close}}{{markdown.cl|newline}}"
+                                 (subseq str pos-block-el-start))))
+          str)
+        str)))
+
+(defun paragraph-format (str)
+  (if (search "{{markdown.cl|paragraph}}" str)
+      (let* ((scanner-split-paragraphs (cl-ppcre:create-scanner "{{markdown\\.cl\\|paragraph}}"
+                                                                :single-line-mode t))
+             (parts (cl-ppcre:split scanner-split-paragraphs str))
+             (parts (remove-if (lambda (p)
+                                 (string= (string-trim '(#\newline #\space) p) ""))
+                               parts)))
+        (concatenate 'string
+                     *nl* "{{markdown.cl|paragraph|open}}" *nl*
+                     (reduce (lambda (concat part)
+                               (let ((part (format-html-blocks-in-paragraph part)))
+                                 (if concat
+                                     (concatenate 'string
+                                                  concat
+                                                  *nl* "{{markdown.cl|paragraph|close}}"
+                                                  *nl* "{{markdown.cl|paragraph|open}}"
+                                                  *nl* part)
+                                     part)))
+                             parts
+                             :initial-value nil)
+                     *nl* "{{markdown.cl|paragraph|close}}" *nl*))
+      str))
+
+(defun parse-paragraphs (str &key force)
+  (let* ((str (string-left-trim '(#\newline #\space) str))
+         (block-el-position (cl-ppcre:scan *scanner-find-first-html-block-element* str)))
+    (unless force
+      (format t "str: ~a~%" str))
+    (if (and block-el-position (zerop block-el-position))
+        str
+        (let* ((str (paragraph-format str))
+               (scanner-clean-paragraphs (cl-ppcre:create-scanner
+                                           "{{markdown.cl\\|paragraph\\|open}}[ \\n]+{{markdown.cl\\|paragraph\\|close}}"
+                                           :single-line-mode t)))
+          (cl-ppcre:regex-replace-all scanner-clean-paragraphs str "")))))
 
 ;; -----------------------------------------------------------------------------
 ;; header formatting
@@ -191,17 +287,18 @@
 ;; -----------------------------------------------------------------------------
 ;; list formatting
 ;; -----------------------------------------------------------------------------
+(defparameter *list-recursion-level* 0)
 
 (defun pre-format-paragraph-lists (str &optional (join-list-items t))
   "Format lists in paragraph style to be normalized so they aren't chopped up by
    the rest of the parsing."
-  (let* ((scanner-format-p-lists (cl-ppcre:create-scanner
+  (let* ((scanner-join-p-lists (cl-ppcre:create-scanner
+                                 ;"((\\n\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+){2,})"
+                                 "((\\n\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+((\\n[^\\n]+)+)?){2,})"
+                                 :single-line-mode t))
+         (scanner-format-p-lists (cl-ppcre:create-scanner
                                    "(\\n\\s{0,3}([*+-]|[0-9]+\\. )(([^\\n]+\\n)+|\\n))\\s*\\n {4,}(?!( |\\n))"
                                    :single-line-mode t))
-         (scanner-join-p-lists (cl-ppcre:create-scanner
-                                 ;"((\\n\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n])+\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+)"
-                                 "((\\n\\n\\s{0,3}([*+-]|[0-9]+\\. )[^\\n]+){2,})"
-                                 :single-line-mode t))
          (str (if join-list-items
                   (cl-ppcre:regex-replace-all
                     scanner-join-p-lists
@@ -217,63 +314,12 @@
                                   (concatenate 'string *nl* a b "{{markdown.cl|paragraph}}" *nl*))
                                 parts))))
                   str))
-         (str-formatted (cl-ppcre:regex-replace-all scanner-format-p-lists str "\\1{{markdown.cl|paragraph}}")))
+         (str-formatted (cl-ppcre:regex-replace-all scanner-format-p-lists
+                                                    str
+                                                    "\\1{{markdown.cl|paragraph}}")))
     (if (= (length str) (length str-formatted))
         str-formatted
         (pre-format-paragraph-lists str-formatted nil))))
-
-(defun test-list (&optional return)
-  (let* ((str (format nil "~
--  bullet1 is a great bullet
-  - fuck this shit
-- bullet 2 is ucking grand
--   this is a list item with multiple paragraphs
-
-    here it is again
-
-    another paragraph
-- bullet 3
-is a lazy piece of shit!!
-omg poop
-
-1. hai
-2. number list!!
-
--and another
-here's a test
-
-    multi-paragraph list
-
-    item
-
-
-- paragraph
-
-- list
-
-- items
-
-"))
-         (str (prepare-markdown-string str)))
-    (let* ((block-parse t)
-           (str (pre-format-paragraph-lists str)))
-      (if block-parse
-          (let* ((blocks (split-blocks str))
-                 ;(blocks (remove-if 
-                 (new-blocks nil))
-            (dolist (block blocks)
-              (let* ((block (prepare-markdown-string block))
-                     (parsed (parse-lists block)))
-                (format t "~s~%---~%" block)
-                ;(format t "parsed: ~a~%" parsed)
-                (push parsed new-blocks)))
-            (when return
-              ;(reduce (lambda (a b) (concatenate 'string a *nl* b)) (reverse new-blocks))
-              (reverse new-blocks)
-              ))
-          (let ((str (parse-lists str)))
-            (when return
-              str))))))
 
 (defun join-list-lines (str)
   "Turns lists broken into multiple lines into (per item) so that there's one
@@ -287,8 +333,6 @@ here's a test
    
    - my list item broken into multiple lines"
   (let* ((scanner-join (cl-ppcre:create-scanner
-                         ;"(\\n\\s*([*+-]|[0-9]+\\. )[^\\n]+)\\n\\s*(?!(\\n|([*+-]|[0-9]+\\. )| {8, }))"
-                         ;"((\\n\\s*([*+-]|[0-9]+\\. )[^\\n]+)(\\n(?!\\s*([*+-]|[0-9]+\\. ))\\s*[^ \\n]+)+)"
                          "(\\n\\s*([*+-]|[0-9]+\\. )[^\\n]+)\\n\\s*(?!\\s*([*+-]|[0-9]+\\. ))"
                          :single-line-mode t))
          (multiple-lines-p (cl-ppcre:scan scanner-join str)))
@@ -308,11 +352,9 @@ here's a test
          (str (cl-ppcre:regex-replace-all scanner-normalize-ol str "\\1+")))
     str))
 
-(defparameter *list-recursion-level* 0)
-
 (defun format-lists (str indent)
   (incf *list-recursion-level*)
-  (when (< *list-recursion-level* 20)
+  (when (< 20 *list-recursion-level*)
     (decf *list-recursion-level*)
     (return-from format-lists str))
   (flet ((build-splitter (indent)
@@ -328,9 +370,6 @@ here's a test
                      :ol))
            (parts (cl-ppcre:split (build-splitter indent) str))
            (parts (remove "" parts :test #'string=)))
-      ;(format t "str (~a): ~a~%" indent str)
-      (format t "parts (~a): ~s~%" *list-recursion-level* parts)
-      ;(return-from format-lists str)
       (prog1
         (concatenate 'string
                      *nl*
@@ -338,16 +377,18 @@ here's a test
                      *nl*
                      "<li>"
                      *nl*
-                     (reduce (lambda (a b)
-                               (when b
-                                 (setf b (cl-ppcre:regex-replace
-                                           (cl-ppcre:create-scanner "\\n(?=\\s*[+-])" :single-line-mode t)
-                                           b
-                                           (concatenate 'string *nl* *nl*))
-                                       ;b (concatenate 'string *nl* b)
-                                       b (parse-lists b)))
+                     (reduce (lambda (concat part)
+                               (when part
+                                 (setf part (parse-paragraphs part :force t)
+                                       part (cl-ppcre:regex-replace
+                                              (cl-ppcre:create-scanner "\\n(?=\\s*[+-])" :single-line-mode t)
+                                              part
+                                              (concatenate 'string *nl* *nl*))
+                                       part (parse-lists part)))
 
-                               (concatenate 'string *nl* a *nl* "</li>" *nl* "<li>" *nl* b))
+                               (if concat
+                                   (concatenate 'string *nl* concat *nl* "</li>" *nl* "<li>" *nl* part)
+                                   part))
                              parts :initial-value nil)
                      *nl*
                      "</li>"
@@ -357,11 +398,12 @@ here's a test
         (decf *list-recursion-level*)))))
 
 (defparameter *scanner-block-list-pos*
-  (cl-ppcre:create-scanner "(^|(?<=\\n))\\s*[+-][^\\n]+" :single-line-mode t)
-  "Detects if a block has a ul section.")
+  (cl-ppcre:create-scanner "(?<=\\n)\\s*[+-][^\\n]+" :single-line-mode t)
+  "Detects if a block has a ul/ol section.")
 
 (defun parse-list-blocks (str)
-  (let ((list-pos (cl-ppcre:scan *scanner-block-list-pos* str)))
+  (let* ((str (concatenate 'string *nl* (string-left-trim #(#\newline) str)))
+         (list-pos (cl-ppcre:scan *scanner-block-list-pos* str)))
 
     (unless list-pos
       (return-from parse-list-blocks str))
@@ -370,7 +412,7 @@ here's a test
                                   (or (char= c #\-)
                                       (char= c #\+)))
                                 str
-                                :start (or list-pos 0)))
+                                :start list-pos))
            (indent (if indent
                        (- indent list-pos)
                        0))
@@ -383,72 +425,23 @@ here's a test
                                 "\\+"
                                 "-"))
            (section-splitter (cl-ppcre:create-scanner 
-                       (format nil "^(?= {~a}~a)" indent split-type-char)
+                       (format nil "^(?= {~a}~a)" (max 0 (1- indent)) split-type-char)
                        :multi-line-mode t))
-           (parts (cl-ppcre:split section-splitter str :limit 1))
-           (new-parts nil))
-      (dolist (str parts)
-        ;(format t "part: ~s~%" parts)
-        (let ((part (cond ((and list-pos (zerop list-pos))
-                           (concatenate 'string
-                                        (format-lists str indent)))
-                          (list-pos
-                            (let ((garble (subseq str 0 list-pos))
-                                  (list-text (subseq str list-pos)))
-                              (concatenate 'string garble (parse-list-blocks list-text))))
-                          (t str))))
-          (push part new-parts)))
-      (reduce (lambda (a b) (concatenate 'string a b)) (reverse new-parts)))))
+           (parts (cl-ppcre:split section-splitter str :limit 2)))
 
-;(defun parse-list-blocks_ (str)
-;  (let* ((ul-pos (cl-ppcre:scan *scanner-block-has-ul* str))
-;         (ol-pos (cl-ppcre:scan *scanner-block-has-ol* str)))
-;
-;    (when (or (and ul-pos (zerop ul-pos) ol-pos)
-;              (and ol-pos (zerop ol-pos) ul-pos))
-;      (flet ((get-list-indent (pos)
-;               (when pos
-;                 (let ((test (subseq str pos)))
-;                   (- (length test)
-;                      (1+ (length (string-left-trim #(#\newline #\space) test))))))))
-;        (let ((ul-indent (get-list-indent ul-pos))
-;              (ol-indent (get-list-indent ol-pos)))
-;          (loop while (if (and ul-pos (zerop ul-pos))
-;                          (and ol-pos ol-indent (not (= ol-indent ul-indent)))
-;                          (and ul-pos ul-indent (not (= ul-indent ol-indent)))) do
-;            (if (zerop ul-pos)
-;                (setf ol-pos (cl-ppcre:scan *scanner-block-has-ol* str :start (1+ ol-pos))
-;                      ol-indent (get-list-indent ol-pos))
-;                (setf ul-pos (cl-ppcre:scan *scanner-block-has-ol* str :start (1+ ul-pos))
-;                      ul-indent (get-list-indent ul-pos)))))))
-;
-;    (cond ((and ul-pos
-;                ol-pos
-;                (zerop ul-pos))
-;           (let ((ul-text (subseq str 0 ol-pos))
-;                 (rest-text (subseq str ol-pos)))
-;             (concatenate 'string (format-lists ul-text :type :ul) *nl* (parse-list-blocks rest-text))))
-;          ((and ol-pos
-;                ul-pos
-;                (zerop ol-pos))
-;           (let ((ol-text (subseq str 0 ul-pos))
-;                 (rest-text (subseq str ul-pos)))
-;             (concatenate 'string (format-lists ol-text :type :ol) *nl* (parse-list-blocks rest-text))))
-;          ((or (and ul-pos (zerop ul-pos))
-;               (and ol-pos (zerop ol-pos)))
-;           (format-lists str :type (if ol-pos :ol :ul)))
-;          (ul-pos
-;           (let ((garble (subseq str 0 ul-pos))
-;                 (ul-text (subseq str ul-pos)))
-;             (concatenate 'string garble (parse-list-blocks ul-text))))
-;          (ol-pos
-;           (let ((garble (subseq str 0 ol-pos))
-;                 (ol-text (subseq str ol-pos)))
-;             (concatenate 'string garble (parse-list-blocks ol-text))))
-;          (t str))))
-
-(defun parse-ol (str)
-  str)
+      (if (< 1 (length parts))
+          (reduce (lambda (a b)
+                    (concatenate 'string a (parse-list-blocks b)))
+                  parts
+                  :initial-value nil)
+          (let ((str (car parts)))
+            (cond ((and list-pos (<= list-pos 1))
+                   (format-lists (subseq str list-pos) indent))
+                  (list-pos
+                    (let ((garble (subseq str 0 list-pos))
+                          (list-text (subseq str list-pos)))
+                      (concatenate 'string garble (parse-list-blocks list-text))))
+                  (t str)))))))
 
 (defun parse-lists (str)
   (let* ((str (normalize-lists (normalize-lists str)))
@@ -483,6 +476,8 @@ here's a test
                                parse-atx-headers
                                parse-setext-headers
                                parse-embedded-code
+                               parse-embedded-blockquote
+                               parse-horizontal-rule
                                pre-format-paragraph-lists
                                ))
          (handlers-post-block '(
@@ -490,16 +485,18 @@ here's a test
                                 parse-standard-blockquote
                                 parse-code
                                 parse-links
-                                parse-paragraphs
+                                ;parse-paragraphs
                                 parse-lists
                                 parse-entities
                                 )))
     (dolist (handler handlers-pre-block)
       (unless (find handler disable-parsers)
         (setf str (funcall handler str))))
-    ;(format t "str: ~s~%" str)
-    (let ((blocks (split-blocks str))
-          (new-blocks nil))
+    (let* ((blocks (split-blocks str))
+           (blocks (remove-if (lambda (b)
+                                (string= (string-trim '(#\newline #\space) b) ""))
+                              blocks))
+           (new-blocks nil))
       ;(format t "blocks: ~s~%" blocks)
       (dolist (block blocks)
         (setf block (pad-string block *nl*))
@@ -522,7 +519,7 @@ header1
 ====
 this is a paragraph
 
-===========
+* * *
 
 * some bullets
 + are good
@@ -570,4 +567,56 @@ end of markdown...
 "))
          (str (parse-string str)))
     (when show str)))
+
+(defun test-list (&optional return)
+  (let* ((str (format nil "~
+-  bullet1 is a great bullet
+  - fuck this shit
+  1. this is great!!!
+  2. ohhhh heyyyyy yeah!!
+- bullet 2 is ucking grand
+-   this is a list item with multiple paragraphs
+
+    here it is again
+
+    another paragraph
+- bullet 3
+is a lazy piece of shit!!
+omg poop
+
+1. hai
+2. number list!!
+
+
+* blockquote in list item
+
+    > line1
+    > line2
+
+
+- code in li, bitch
+
+        (defun my-function (value)
+          ;; lol
+          (1+ value))
+
+-and another
+here's a test
+
+    multi-paragraph list
+
+    item
+
+
+- paragraph
+
+- list
+
+- items
+"
+))
+         (str (prepare-markdown-string str))
+         (str (parse-string str)))
+    (when return
+      str)))
 
