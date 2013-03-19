@@ -3,6 +3,9 @@
 (defparameter *nl* (coerce #(#\newline) 'string)
   "Holds a string of a single newline character.")
 
+(defparameter *link-references* nil
+  "Holds a hash table mapping link ids to URLs.")
+
 ;; -----------------------------------------------------------------------------
 ;; block parsing
 ;; -----------------------------------------------------------------------------
@@ -20,7 +23,7 @@
                 str
                 (concatenate 'string "\\1" *nl* *nl*))))
     (cl-ppcre:split
-      (cl-ppcre:create-scanner "(?<=\\n\\n)(?!( {4,}|\t))" :case-insensitive-mode t :single-line-mode t)
+      (cl-ppcre:create-scanner "(?<=\\n\\n)(?! {4,})" :case-insensitive-mode t :single-line-mode t)
       str)))
 
 ;; -----------------------------------------------------------------------------
@@ -33,8 +36,8 @@
 (defun parse-entities (str)
   "Replace non-purposeful entities with escaped equivalents."
   (let* ((str (cl-ppcre:regex-replace-all "&(?![a-z]{2,6};)" str "&amp;"))
-         (str (cl-ppcre:regex-replace-all "<(?!/?[a-z0-9]+(\s?[a-z]+=\"[^\\\"]+\")*>)" str "&lt;"))
-         (str (cl-ppcre:regex-replace-all "(</?[a-z0-9]+(\s?[a-z]+=\"[^\\\"]+\")*)>" str "\\1{{markdown.cl|gt}}"))
+         (str (cl-ppcre:regex-replace-all "<(?!/?[a-z0-9]+(\\s?[a-z]+=\"[^\\\"]+\")*>)" str "&lt;"))
+         (str (cl-ppcre:regex-replace-all "(</?[a-z0-9]+(\\s?[a-z]+=\"[^\\\"]+\")*)>" str "\\1{{markdown.cl|gt}}"))
          (str (cl-ppcre:regex-replace-all ">" str "&gt;"))
          (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str ">")))
     str))
@@ -60,7 +63,9 @@
 ;; -----------------------------------------------------------------------------
 (defun parse-not-in-code (str parser-fn &key escape)
   "Given a string and a parsing function, run the parsing function over the
-   parts of the string that are not inside any code block."
+   parts of the string that are not inside any code block.
+   
+   Also has the ability to escape the internals of code blocks."
   (let ((parts (cl-ppcre:split
                  (cl-ppcre:create-scanner "<(?=/?code>)" :multi-line-mode t)
                  str))
@@ -260,8 +265,99 @@
 ;; -----------------------------------------------------------------------------
 ;; anchor formatting
 ;; -----------------------------------------------------------------------------
+(defun gather-link-references (str)
+  "Look for any link references in the document:
+   
+   [link-id]: http://my-url.com
+   [4]: http://my-link.com (optional title)
+   [mylink]: http://my-url.com/lol 'kewl link brah'
+   [omg]: http://lol.com/wtf \"rofl\"
+
+   and parse them into the *link-references* hash table. The data will be pulled
+   out when parse-links is called."
+  (let* ((scanner-find-link-refs (cl-ppcre:create-scanner
+                                   "^\\[([^\\]]+)\\]: *([^\\s]+)( +[\"'(](.*?)[\"')])? *$"
+                                   :multi-line-mode t
+                                   :case-insensitive-mode t)))
+    (cl-ppcre:regex-replace-all
+      scanner-find-link-refs
+      str
+      (lambda (match &rest regs)
+        (let* ((regs (cddddr regs))
+               (rs (car regs))
+               (re (cadr regs))
+               (id (subseq match (aref rs 0) (aref re 0)))
+               (id (string-downcase id))
+               (url (subseq match (aref rs 1) (aref re 1)))
+               (title (if (aref rs 3)
+                          (subseq match (aref rs 3) (aref re 3))
+                          nil)))
+          (setf (gethash id *link-references*) (list :url url :title title))
+          "")))))
+
+(defun make-link (url text title)
+  (concatenate 'string
+               "<a href=\"" url "\""
+               (when title
+                 (concatenate 'string " title=\"" title "\""))
+               ">" text "</a>"))
+
+(defun parse-links-ref (str)
+  "Parse links that are reference-style:
+     [link text][id]"
+  (let* ((scanner-links-id (cl-ppcre:create-scanner "\\[([^\\]]+)\\]\\[([^\\]]*)\\]")))
+    (cl-ppcre:regex-replace-all
+      scanner-links-id
+      str
+      (lambda (match &rest regs)
+        (let* ((regs (cddddr regs))
+               (rs (car regs))
+               (re (cadr regs))
+               (text (subseq match (aref rs 0) (aref re 0)))
+               (id (subseq match (aref rs 1) (aref re 1)))
+               (id (if (string= "" id)
+                     text
+                     id))
+               (id (string-downcase id))
+               (match (gethash id *link-references*))
+               (url (getf match :url))
+               (title (getf match :title)))
+          (make-link url text title))))))
+
+(defun parse-links-self (str)
+  "Parse links that are self contained (not a reference):
+     [my link text](http://url.com \"title\")"
+  (let* ((scanner-links-self (cl-ppcre:create-scanner "\\[([^\\]]+)\\]\\(([^ ]+)( \"(.*?)\")?\\)")))
+    (cl-ppcre:regex-replace-all
+      scanner-links-self
+      str
+      (lambda (match &rest regs)
+        (let* ((regs (cddddr regs))
+               (rs (car regs))
+               (re (cadr regs))
+               (text (subseq match (aref rs 0) (aref re 0)))
+               (url (subseq match (aref rs 1) (aref re 1)))
+               (title (if (aref rs 3)
+                        (subseq match (aref rs 3) (aref re 3))
+                        nil)))
+          (make-link url text title))))))
+
+(defun parse-quick-links (str)
+  "Parse quick-link style:
+     <http://killtheradio.net>"
+  (let* ((scanner-links-quick (cl-ppcre:create-scanner "<([0-9a-z]+://[^>]+)>" :case-insensitive-mode t)))
+    (cl-ppcre:regex-replace-all
+      scanner-links-quick
+      str
+      "<a href=\"\\1\">\\1</a>"
+      :preserve-case t)))
+  
 (defun parse-links (str)
-  str)
+  "Parse all link styles."
+  (let* ((str (parse-links-ref str))
+         (str (parse-links-self str))
+         (str (parse-quick-links str)))
+    str))
 
 ;; -----------------------------------------------------------------------------
 ;; paragraph formatting
@@ -745,8 +841,12 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 (defun parse-string (str &key disable-parsers)
   "Parse a markdown string into HTML."
   (let* ((str (prepare-markdown-string str))
+         (*link-references* (if *link-references*
+                                *link-references*
+                                (make-hash-table :test #'equal)))
          (handlers-pre-block '(
                                parse-escaped-characters
+                               gather-link-references
                                parse-atx-headers
                                parse-setext-headers
                                parse-embedded-code
@@ -809,6 +909,13 @@ header1
 this is a paragraph
 html iz kewl `&mdash;` as shown in that code block
 it has ``some code (which <strong>use</strong> `)``
+
+this is a paragraph [with some][link1] links in it.
+it is [meant](http://wikipedia.com/meaning \"meaning\")
+to [test][test-link] and shit. [test-link][].
+
+[link1]: http://mylinktest.com/why-links-r-kewl
+[test-link]: http://test.com/markdown (a title)
 
 * * *
 
@@ -922,14 +1029,20 @@ here's a test
     (when return
       str)))
 
-(defun test-p (&optional show)
+(defun test-links (&optional show)
   (format t "--------------~%")
   (let* ((str "
-title
------
-    <div>
-        &copy;
-    </div>
+this is a paragraph
+html iz kewl `&mdash;` as shown in that code block
+it has ``some code (which <strong>use</strong> `)``
+
+this is a paragraph [with some][link1] links in it.
+it is [meant](http://wikipedia.com/meaning \"meaning\")
+to [test][test-link] and shit. [test-link][].
+
+[link1]: http://mylinktest.com/why-links-r-kewl
+[test-link]: http://test.com/markdown (a title)
+
 ")
          (str (parse-string str)))
     (when show str)))
