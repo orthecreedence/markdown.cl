@@ -305,7 +305,7 @@
 (defun parse-links-ref (str)
   "Parse links that are reference-style:
      [link text][id]"
-  (let* ((scanner-links-id (cl-ppcre:create-scanner "\\[([^\\]]+)\\]\\[([^\\]]*)\\]")))
+  (let* ((scanner-links-id (cl-ppcre:create-scanner "\\[([^\\]]+)\\](\\n| )?\\[([^\\]]*)\\]")))
     (cl-ppcre:regex-replace-all
       scanner-links-id
       str
@@ -314,7 +314,7 @@
                (rs (car regs))
                (re (cadr regs))
                (text (subseq match (aref rs 0) (aref re 0)))
-               (id (subseq match (aref rs 1) (aref re 1)))
+               (id (subseq match (aref rs 2) (aref re 2)))
                (id (if (string= "" id)
                      text
                      id))
@@ -327,7 +327,7 @@
 (defun parse-links-self (str)
   "Parse links that are self contained (not a reference):
      [my link text](http://url.com \"title\")"
-  (let* ((scanner-links-self (cl-ppcre:create-scanner "\\[([^\\]]+)\\]\\(([^ ]+)( \"(.*?)\")?\\)")))
+  (let* ((scanner-links-self (cl-ppcre:create-scanner "\\[([^\\]]+)\\](\\n| )?\\(([^ ]+)( \"(.*?)\")?\\)")))
     (cl-ppcre:regex-replace-all
       scanner-links-self
       str
@@ -336,9 +336,9 @@
                (rs (car regs))
                (re (cadr regs))
                (text (subseq match (aref rs 0) (aref re 0)))
-               (url (subseq match (aref rs 1) (aref re 1)))
-               (title (if (aref rs 3)
-                        (subseq match (aref rs 3) (aref re 3))
+               (url (subseq match (aref rs 2) (aref re 2)))
+               (title (if (aref rs 4)
+                        (subseq match (aref rs 4) (aref re 4))
                         nil)))
           (make-link url text title))))))
 
