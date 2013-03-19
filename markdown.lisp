@@ -263,7 +263,7 @@
 
 
 ;; -----------------------------------------------------------------------------
-;; anchor formatting
+;; link/image formatting
 ;; -----------------------------------------------------------------------------
 (defun gather-link-references (str)
   "Look for any link references in the document:
@@ -274,9 +274,11 @@
    [omg]: http://lol.com/wtf \"rofl\"
 
    and parse them into the *link-references* hash table. The data will be pulled
-   out when parse-links is called."
+   out when parse-links is called.
+   
+   Note that as a side effect, this also gathers image references =]."
   (let* ((scanner-find-link-refs (cl-ppcre:create-scanner
-                                   "\\n\\[([^\\]]+)\\]:( +[^\\s]+) *\\n? *([\"'(](.*?)[\"')])? *"
+                                   "\\n {0,3}\\[([^\\]]+)\\]:( +[^\\s]+) *\\n? *([\"'(](.*?)[\"')])? *"
                                    :single-line-mode t
                                    :case-insensitive-mode t)))
     (cl-ppcre:regex-replace-all
@@ -302,15 +304,24 @@
                  (concatenate 'string " title=\"" title "\""))
                ">" text "</a>"))
 
+(defun make-image (url alt title)
+  (concatenate 'string
+               "<img src=\"" url "\""
+               "alt=\"" alt "\""
+               (when title
+                 (concatenate 'string " title=\"" title "\""))
+               ">"))
+
 (defun parse-links-ref (str)
   "Parse links that are reference-style:
      [link text][id]"
-  (let* ((scanner-links-id (cl-ppcre:create-scanner "\\[([^\\]]+)\\](\\n| )?\\[([^\\]]*)\\]")))
+  (let* ((scanner-links-id (cl-ppcre:create-scanner "!?\\[([^\\]]+)\\](\\n| )?\\[([^\\]]*)\\]")))
     (cl-ppcre:regex-replace-all
       scanner-links-id
       str
       (lambda (match &rest regs)
-        (let* ((regs (cddddr regs))
+        (let* ((is-image (char= (aref match (caddr regs)) #\!))
+               (regs (cddddr regs))
                (rs (car regs))
                (re (cadr regs))
                (text (subseq match (aref rs 0) (aref re 0)))
@@ -322,17 +333,20 @@
                (match (gethash id *link-references*))
                (url (getf match :url))
                (title (getf match :title)))
-          (make-link url text title))))))
+          (if is-image
+              (make-image url text title)
+              (make-link url text title)))))))
 
 (defun parse-links-self (str)
   "Parse links that are self contained (not a reference):
      [my link text](http://url.com \"title\")"
-  (let* ((scanner-links-self (cl-ppcre:create-scanner "\\[([^\\]]+)\\](\\n| )?\\(([^ ]+)( \"(.*?)\")?\\)")))
+  (let* ((scanner-links-self (cl-ppcre:create-scanner "!?\\[([^\\]]+)\\](\\n| )?\\(([^ ]+)( \"(.*?)\")?\\)")))
     (cl-ppcre:regex-replace-all
       scanner-links-self
       str
       (lambda (match &rest regs)
-        (let* ((regs (cddddr regs))
+        (let* ((is-image (char= (aref match (caddr regs)) #\!))
+               (regs (cddddr regs))
                (rs (car regs))
                (re (cadr regs))
                (text (subseq match (aref rs 0) (aref re 0)))
@@ -340,7 +354,9 @@
                (title (if (aref rs 4)
                         (subseq match (aref rs 4) (aref re 4))
                         nil)))
-          (make-link url text title))))))
+          (if is-image
+              (make-image url text title)
+              (make-link url text title)))))))
 
 (defun parse-quick-links (str)
   "Parse quick-link style:
@@ -353,7 +369,8 @@
       :preserve-case t)))
   
 (defun parse-links (str)
-  "Parse all link styles."
+  "Parse all link styles. It's important to note that because the image/link
+   syntax is so similar, the following parsers handle both images and links."
   (let* ((str (parse-links-ref str))
          (str (parse-links-self str))
          (str (parse-quick-links str)))
@@ -1035,6 +1052,8 @@ here's a test
 this is a paragraph
 html iz kewl `&mdash;` as shown in that code block
 it has ``some code (which <strong>use</strong> `)``
+
+![image alt](http://images.com \"image title\")
 
 this is a paragraph [with some][link1] links in it.
 it is [meant](http://wikipedia.com/meaning \"meaning\")
