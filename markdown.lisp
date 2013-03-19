@@ -39,7 +39,8 @@
 ;; hr parsing
 ;; -----------------------------------------------------------------------------
 (defun parse-horizontal-rule (str)
-  "Make horizontal rules."
+  "Make horizontal rules. These are (almost?) always wrapped in <p> tags by the
+   paragraph parser, but this is taken care of in the final parsing pass."
   (let* ((scanner-hr (cl-ppcre:create-scanner "^([*_-] ?){3,}$" :multi-line-mode t)))
     (cl-ppcre:regex-replace-all scanner-hr str "<hr>")))
 
@@ -114,26 +115,6 @@
       (parse-string str :disable-parsers disabled-parsers)
       *nl* "</blockquote>")))
 
-(defun parse-blockquote (str re)
-  "Parse a blockquote."
-  (cl-ppcre:regex-replace-all re str
-    (lambda (match &rest regs)
-      (let* ((regs (cddddr regs))
-             (rs (car regs))
-             (re (cadr regs))
-             (text (subseq match (aref rs 0) (aref re 0))))
-        (concatenate 'string *nl* (format-blockquote text) *nl*)))))
-
-(defun parse-standard-blockquote (str)
-  "Parse a standard-formatted (non-lazy) blockquote:
-   
-   > this is a 
-   > standard blockquote
-   > > that allows nesting
-   > where multiple lines are preceeded
-   > by the '>' character"
-  (parse-blockquote str *scanner-blockquote*))
-
 (defun convert-lazy-blockquote-to-standard (str)
   "Converts a lazy blockquote:
    
@@ -168,42 +149,61 @@
   (cl-ppcre:create-scanner "(\\n>.*?\\n(?=\\n(?!>)))" :single-line-mode t)
   "A scanner for finding blockquotes.")
 
-;; TODO: remove!
-(defun parse-lazy-blockquote (str)
-  "Parse lazy blockquotes. A lazy blockquote is one like so:
-   
-   > this is a blockquote quote
-   that continues on the following
-   lines until two linebreaks are
-   met
-   
-   Lazy blockquotes are not allowed to nest other blockquotes."
-  (parse-blockquote str *scanner-lazy-blockquote*))
-
 (defun parse-embedded-blockquote (str)
-  "Parse blockquotes that occur inside a list."
-  (let ((scanner-find-list-blockquote (cl-ppcre:create-scanner
-                                        "(\\n([*+-]|[0-9]+\\. )[^\\n]+(\\n(?! *([*+-]|[0-9]+\\. ))[^\\n]+)*)((\\n\\s*\\n\\s{4,}(?!>)[^\\n]+)*)\\n?((\\n {4,}>[^\\n]*)+)"
-                                        :single-line-mode t))
-        (scanner-format-blockquote (cl-ppcre:create-scanner
-                                     "^\\s+>"
-                                     :multi-line-mode t)))
-    (cl-ppcre:regex-replace-all
-      scanner-find-list-blockquote
-      str
-      (lambda (match &rest regs)
-        (let* ((regs (cddddr regs))
-               (rs (car regs))
-               (re (cadr regs))
-               (bullet (subseq match (aref rs 0) (aref re 0)))
-               (bullet (if (aref rs 3)
-                           (concatenate 'string bullet (subseq match (aref rs 3) (aref re 3)))
-                           bullet))
-               (blockquote (subseq match (aref rs 6) (aref re 6)))
-               (blockquote (cl-ppcre:regex-replace-all scanner-format-blockquote blockquote ">"))
-               (blockquote (concatenate 'string *nl* blockquote)))
-          (concatenate 'string bullet (parse-standard-blockquote blockquote)))))))
-      
+  "Parse blockquotes that occur inside a list. This must be a separate step,
+   otherwise things can get wonky when parsing lists. The idea is to find
+   blockquotes that are embedded in lists *before* the lists are processed, then
+   turn them into what the list parser views as a standard paragraph."
+  (let* ((scanner-find-list-blockquote
+           (cl-ppcre:create-scanner
+             "(\\n([*+-]|[0-9]+\\. )[^\\n]+(\\n(?! *([*+-]|[0-9]+\\. ))[^\\n]+)*)((\\n\\s*\\n\\s{4,}(?!>)[^\\n]+)*)\\n?((\\n {4,}>[^\\n]*)+)"
+             :single-line-mode t))
+         (scanner-format-blockquote (cl-ppcre:create-scanner
+                                      "^\\s+>"
+                                      :multi-line-mode t))
+         (str (cl-ppcre:regex-replace-all
+                scanner-find-list-blockquote
+                str
+                (lambda (match &rest regs)
+                  ;; this can get nasty, depending on what parts matches the scan
+                  ;; (if you couldn't tell from the above regex). what we're doing
+                  ;; is trying to piece together all of the groups we saved above
+                  ;; to construct the original text for the bullet, as well as pull
+                  ;; out *and process* the blockquote text, which is then concated
+                  ;; back onto the bullet.
+                  (let* ((regs (cddddr regs))
+                         (rs (car regs))
+                         (re (cadr regs))
+                         ;; get the original bullet text (between the bullet and
+                         ;; the blockquote) prepared
+                         (bullet (subseq match (aref rs 0) (aref re 0)))
+                         (bullet (if (aref rs 5)
+                                     (concatenate 'string bullet
+                                                  (subseq match (aref rs 5) (aref re 5)))
+                                     bullet))
+                         ;; pull out the blockquote and process it
+                         (blockquote (subseq match (aref rs 6) (aref re 6)))
+                         (blockquote (cl-ppcre:regex-replace-all
+                                       scanner-format-blockquote
+                                       blockquote
+                                       ">"))
+                         (blockquote (concatenate 'string *nl* blockquote)))
+                    ;; sew them back together, parsing the blockquote as we go along
+                    (concatenate 'string bullet (parse-blockquote blockquote)))))))
+    (if (cl-ppcre:scan scanner-find-list-blockquote str)
+        (parse-embedded-blockquote str)
+        str)))
+
+(defun parse-blockquote (str)
+  "Parse a blockquote recursively, using the passed-in regex."
+  (cl-ppcre:regex-replace-all *scanner-blockquote* str
+    (lambda (match &rest regs)
+      (let* ((regs (cddddr regs))
+             (rs (car regs))
+             (re (cadr regs))
+             (text (subseq match (aref rs 0) (aref re 0))))
+        (concatenate 'string *nl* (format-blockquote text))))))
+
 
 ;; -----------------------------------------------------------------------------
 ;; anchor formatting
@@ -231,6 +231,17 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
   "A scanner that searches for HTML elements that are not inline.")
 
 (defun format-html-blocks-in-paragraph (str)
+  "This is a very helpful function which turns:
+   
+   <p>this is my text<div>this is inside a block</div> more text</p>
+   
+   into:
+   
+   <p>this is my text</p><div>this is inside a block</div><p>more text</p>
+   
+   In other words, it unwraps <p> tags from around HTML block elements, and does
+   so such that all text between the first block tag found and after the last
+   block tag found is left untouched (and unwrapped by <p>)."
   (let* ((pos-block-el-start (cl-ppcre:scan *scanner-find-first-html-block-element* str))
          (pos-block-el-end (multiple-value-list
                              (cl-ppcre:scan *scanner-find-last-html-block-element* str)))
@@ -251,6 +262,10 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
         str)))
 
 (defun paragraph-format (str)
+  "This function looks for {{markdown.cl|paragraph}} tags and splits up the text
+   given accordingly, adding opening/closing markdown.cl paragraph tags around
+   each of the splits. It then uses format-html-blocks-in-paragraph to remove
+   any paragraph tags that shouldn't be there."
   (if (search "{{markdown.cl|paragraph}}" str)
       (let* ((scanner-split-paragraphs (cl-ppcre:create-scanner "{{markdown\\.cl\\|paragraph}}"
                                                                 :single-line-mode t))
@@ -275,6 +290,14 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
       str))
 
 (defun parse-paragraphs (str &key pre-formatted)
+  "This formats paragraphs in text. Most blocks given to is are treated as
+   paragraph blocks until otherwise noted. If it detects that another parser
+   added in paragraph tags, it will skip the block *unless* the pre-formatted
+   key arg is T (meaning that the string being passed in has paragraph tags
+   in it that need to be dealt with).
+   
+   This function also does its best to clean the output by ridding us of empty
+   paragraph blocks."
   (let ((has-paragraphs-already-p (search "{{markdown.cl|paragraph|open}}" str)))
     (if (and has-paragraphs-already-p
              (not pre-formatted))
@@ -422,15 +445,32 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
     str))
 
 (defun format-lists (str indent)
-  ""
+  "This is the function that actually makes lists happen. Once all the blocks
+   have been diced up into neat little packages ready for formatting, they are
+   handed off to format-lists.
+   
+   This function is responsible for adding the <ul>/<ol>/<li> tags around list
+   items, making sure to only do this for items using the correct indentation
+   level.
+   
+   List items are run through the paragraph filters, have a minimal amount of
+   formatting applied to make sure the recursion goes smoothly, and then are
+   recursively concated onto the final string."
   (incf *list-recursion-level*)
+
+  ;; make sure to not infinitely recurse, in case of bugs
+  ;; TODO: make this a configurable value!!
   (when (< 20 *list-recursion-level*)
     (decf *list-recursion-level*)
     (return-from format-lists str))
+
   (flet ((build-splitter (indent)
+           ;; return a scanner that splits list items up by indent level
            (cl-ppcre:create-scanner
              (format nil "^ {~a}[+-]" indent)
              :multi-line-mode t)))
+    ;; find out what kind of list we're formatting, and split up the list items
+    ;; according to indent
     (let* ((str (string-trim #(#\newline) str))
            (type-char (find-if (lambda (c)
                                  (or (char= c #\-)
@@ -447,18 +487,24 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                      *nl*
                      "<li>"
                      *nl*
+                     ;; concat the list items into one big string after they've
+                     ;; been properly processed
                      (reduce (lambda (concat part)
-                               (when part
-                                 (setf part (parse-paragraphs part :pre-formatted t)
-                                       part (cl-ppcre:regex-replace
+                               ;; do some paragraph/list formatting
+                               (let* ((part (parse-paragraphs part :pre-formatted t))
+                                      ;; make sure first list item in this parsed
+                                      ;; block starts with two \n\n so it gets properly
+                                      ;; separated
+                                      (part (cl-ppcre:regex-replace
                                               (cl-ppcre:create-scanner "\\n(?=\\s*[+-])" :single-line-mode t)
                                               part
-                                              (concatenate 'string *nl* *nl*))
-                                       part (parse-lists part)))
-
-                               (if concat
-                                   (concatenate 'string *nl* concat *nl* "</li>" *nl* "<li>" *nl* part)
-                                   part))
+                                              (concatenate 'string *nl* *nl*)))
+                                      ;; recurse!
+                                      (part (parse-lists part)))
+                                 ;; build the list items
+                                 (if concat
+                                     (concatenate 'string *nl* concat *nl* "</li>" *nl* "<li>" *nl* part)
+                                     part)))
                              parts :initial-value nil)
                      *nl*
                      "</li>"
@@ -481,9 +527,11 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
   (let* ((str (concatenate 'string *nl* (string-left-trim #(#\newline) str)))
          (list-pos (cl-ppcre:scan *scanner-block-list-pos* str)))
 
+    ;; return if no list present
     (unless list-pos
       (return-from parse-list-blocks str))
 
+    ;; find the indent level of the main list
     (let* ((indent (position-if (lambda (c)
                                   (or (char= c #\-)
                                       (char= c #\+)))
@@ -492,34 +540,53 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
            (indent (if indent
                        (- indent list-pos)
                        0))
+           ;; find the character used for the list at this point, we'll have
+           ;; either "-" (a bullet list) or "+" (a numbered list)
            (type-char (find-if (lambda (c)
                                  (or (char= c #\-)
                                      (char= c #\+)))
                             str
                             :start (or list-pos 0)))
+           ;; this will be a character of type-char: if type-char is #\-, then
+           ;; split-type-char will be #\+ (and vice versa). this allows us to
+           ;; split up different list types into different blocks.
            (split-type-char (if (char= (or type-char #\space) #\-)
                                 "\\+"
                                 "-"))
+           ;; split up the list sections (only split the first different list
+           ;; type)
            (section-splitter (cl-ppcre:create-scanner 
                        (format nil "^(?= {~a}~a)" (max 0 (1- indent)) split-type-char)
                        :multi-line-mode t))
            (parts (cl-ppcre:split section-splitter str :limit 2)))
 
       (if (< 1 (length parts))
+          ;; we got two parts!! for each part, recursively call parse-list-blocks
           (reduce (lambda (a b)
                     (concatenate 'string a (parse-list-blocks b)))
                   parts
                   :initial-value nil)
+
+          ;; nope, only one part (the main list)
           (let ((str (car parts)))
             (cond ((and list-pos (<= list-pos 1))
+                   ;; our main list is at the starting position
                    (format-lists (subseq str list-pos) indent))
                   (list-pos
+                    ;; our main list is somewhere in the middle of this block.
+                    ;; this probably shouldn't happen, but "probably" and
+                    ;; "shouldn't" don't mix well with programming, so let's
+                    ;; test for it, splitting the first non-list section
+                    ;; (called "garble") from the list, and parsing only the
+                    ;; list.
                     (let ((garble (subseq str 0 list-pos))
                           (list-text (subseq str list-pos)))
                       (concatenate 'string garble (parse-list-blocks list-text))))
                   (t str)))))))
 
 (defun parse-lists (str)
+  "Parse lists (both bullet and number lists). First, normalizes them (which
+   makes them a whole lot easier to parse) then recursively parses them."
   (let* ((str (normalize-lists (normalize-lists str)))
          (str (parse-list-blocks str)))
     str))
@@ -528,13 +595,29 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 ;; cleanup functions
 ;; -----------------------------------------------------------------------------
 (defun cleanup-newlines (str)
+  "Here we remove excess newlines and convert any markdown.cl newlines into real
+   ones."
   (let* ((scanner-clean (cl-ppcre:create-scanner "\\n+" :single-line-mode t))
          (scanner-newline (cl-ppcre:create-scanner "{{markdown\\.cl\\|newline}}"))
          (str (cl-ppcre:regex-replace-all scanner-clean str *nl*))
          (str (cl-ppcre:regex-replace-all scanner-newline str *nl*)))
     str))
 
+(defun cleanup-hr (str)
+  "Due to the way processing <hr> tags occurs, they are always wrapped in <p>
+   blocks. Instead of trying to figure out a way to NOT wrap them in <p> blocks
+   (which would surely screw up the rest of the paragraph formatting) it makes
+   more sense to let it happen, then fix in the final pass."
+  (cl-ppcre:regex-replace-all
+    (cl-ppcre:create-scanner
+      "{{markdown\\.cl\\|paragraph\\|open}}[\\n\\s]+<hr>[\\n\\s]+{{markdown\\.cl\\|paragraph\\|close}}"
+      :single-line-mode t)
+    str
+    "<hr>"))
+
 (defun cleanup-paragraphs (str)
+  "Remove any empty paragraph blocks (it does happen sometimes) and convert all
+   markdown.cl paragraphs into real <p> tags."
   (let* ((scanner-p-empty (cl-ppcre:create-scanner
                             "{{markdown\\.cl\\|paragraph\\|open}}[\\n\\s]+{{markdown\\.cl\\|paragraph\\|close}}"
                             :single-line-mode t))
@@ -579,8 +662,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                                convert-lazy-blockquote-to-standard
                                ))
          (handlers-post-block '(
-                                ;parse-lazy-blockquote
-                                parse-standard-blockquote
+                                parse-blockquote
                                 parse-code
                                 parse-links
                                 parse-lists
@@ -589,6 +671,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                                 ))
          (handlers-post-reduce '(
                                  cleanup-newlines
+                                 cleanup-hr
                                  cleanup-paragraphs
                                  )))
     (dolist (handler handlers-pre-block)
@@ -644,6 +727,8 @@ i made code LOL
 
 1. numbers
 2. can be useful
+  1. but only
+  2. sometimes
 3. for formatting LOL
 
 * wrap these list
@@ -665,6 +750,11 @@ sometimes i like to quote idiots
     so here's the scoop
 
         and here's a code block!
+
+    > another blockquote
+    > in a list
+
+    end of bs
 
 > ## header quote
 quote paragraph
@@ -737,9 +827,4 @@ here's a test
 ")
          (str (parse-string str)))
     (when show str)))
-
-(defun test-hr ()
-(parse-string "
-* * *
-"))
 
