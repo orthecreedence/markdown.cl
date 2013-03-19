@@ -172,7 +172,7 @@
                              cleanup-newlines)))
     (concatenate 'string
       "<blockquote>" *nl*
-      (parse-string str :disable-parsers disabled-parsers)
+      (parse str :disable-parsers disabled-parsers)
       *nl* "</blockquote>")))
 
 (defun convert-lazy-blockquote-to-standard (str)
@@ -864,7 +864,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
    of the given string with the given padding (also a string)."
   (concatenate 'string padding str padding))
 
-(defun parse-string (str &key disable-parsers)
+(defun parse (str &key disable-parsers)
   "Parse a markdown string into HTML."
   (let* ((str (prepare-markdown-string str))
          (*link-references* (if *link-references*
@@ -919,160 +919,5 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 (defun parse-file (path)
   "Parse a markdown file into HTML (returned as a string)."
   (let ((contents (file-contents path)))
-    (parse-string contents)))
-
-;; -----------------------------------------------------------------------------
-;; temporary tests
-;; -----------------------------------------------------------------------------
-(defun test (&optional show)
-  (format t "--------------~%")
-  (let* ((str (format nil "~
-header1
-====
-this is a paragraph
-html iz kewl `&mdash;` as shown in that code block
-it has ``some code (which <strong>use</strong> `)``
-
-this is a paragraph [with some][link1] links in it.
-it is [meant](http://wikipedia.com/meaning \"meaning\")
-to [test][test-link] and shit. [test-link][].
-
-[link1]: http://mylinktest.com/why-links-r-kewl
-[test-link]: http://test.com/markdown (a title)
-
-* * *
-
-1946\\. was a good year
-
-* some bullets
-+ are *good*
-  - and dont confuse parsers
-  - lol sub bullets
-- for formatting
-  because they wurklol
-
-i made code LOL
----------------
-
-    <div>
-        &copy;
-    </div>
-
-1. numbers
-2. can be useful
-  1. but only
-  2. sometimes
-3. for formatting LOL
-
-* wrap these list
-
-* items in paragraph tags
-
-* plz!!
-
-### quotes
-sometimes i like to quote idiots
-
--   i want to have a bullet
-    with two `paragraphs` lol
-
-    > here's a paragraphed
-    > blockquote with
-    > > a subquote!!
-
-    so here's the scoop
-
-        and here's a `code` block!
-
-    > another blockquote
-    > in a list
-
-    end of bs
-
-> ## header quote
-quote paragraph
-lol paragraph
-also 5 > 4 normally
-
-> poop
-> > shit 
-> fuck
-
-end of markdown...
-"))
-         (str (parse-string str)))
-    (when show str)))
-
-(defun test-list (&optional return)
-  (let* ((str (format nil "~
--  bullet1 is a great bullet
-  - fuck this shit
-  1. this is great!!!
-  2. ohhhh *heyyyyy yeah!!*
-- bullet 2 is ucking grand
--   this is a list item with multiple paragraphs
-
-    here it is again
-
-    another paragraph
-- bullet 3
-is a lazy piece of shit!!
-omg poop
-
-1. hai
-2. number list!!
-
-
-* blockquote in list item
-
-    > line1
-    > line2
-
-
-- code in li, bitch
-
-        (defun my-function (value)
-          ;; lol
-          (1+ value))
-
--and another
-here's a test
-
-    multi-paragraph list
-
-    item
-
-
-- paragraph
-
-- list
-
-- items
-"
-))
-         (str (parse-string str)))
-    (when return
-      str)))
-
-(defun test-links (&optional show)
-  (format t "--------------~%")
-  (let* ((str "
-this is a paragraph
-html iz kewl `&mdash;` as shown in that code block
-it has ``some code (which <strong>use</strong> `)``
-
-![image alt](http://images.com \"image title\")
-
-this is a paragraph [with some][link1] links in it.
-it is [meant](http://wikipedia.com/meaning \"meaning\")
-to [test][test-link] and shit. [test-link][] so email
-me at <orthecreedence@gmail.com>
-
-[link1]: http://mylinktest.com/why-links-r-kewl
-  (the title can be on its own line)
-[test-link]: http://test.com/markdown (a title)
-
-")
-         (str (parse-string str)))
-    (when show str)))
+    (parse contents)))
 
