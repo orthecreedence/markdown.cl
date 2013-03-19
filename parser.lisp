@@ -897,11 +897,11 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
    of the given string with the given padding (also a string)."
   (concatenate 'string padding str padding))
 
-(defun parse (str &key disable-parsers)
+(defun parse (markdown-string &key disable-parsers)
   "Parse a markdown string into HTML."
-  (when (string= (string-trim '(#\newline #\space) str) "")
-    (return-from parse str))
-  (let* ((str (prepare-markdown-string str))
+  (when (string= (string-trim '(#\newline #\space) markdown-string) "")
+    (return-from parse markdown-string))
+  (let* ((str (prepare-markdown-string markdown-string))
          (*link-references* (if *link-references*
                                 *link-references*
                                 (make-hash-table :test #'equal)))
@@ -954,8 +954,8 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
             (setf str (funcall handler str))))
         str))))
 
-(defun parse-file (path)
+(defun parse-file (path &key disable-parsers)
   "Parse a markdown file into HTML (returned as a string)."
   (let ((contents (file-contents path)))
-    (parse contents)))
+    (parse contents :disable-parsers disable-parsers)))
 
