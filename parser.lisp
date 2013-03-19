@@ -41,9 +41,9 @@
 
 (defun parse-entities (str)
   "Replace non-purposeful entities with escaped equivalents."
-  (let* ((str (cl-ppcre:regex-replace-all "&(?![a-z]{2,6};)" str "&amp;"))
-         (str (cl-ppcre:regex-replace-all "<(?!/?[a-z0-9]+(\\s?[a-z]+=\"[^\\\"]*\")*>)" str "&lt;"))
-         (str (cl-ppcre:regex-replace-all "(</?[a-z0-9]+(\\s?[a-z]+=\"[^\\\"]*\")*)>" str "\\1{{markdown.cl|gt}}"))
+  (let* ((str (cl-ppcre:regex-replace-all "&(?!#?[\\w]{2,6};)" str "&amp;"))
+         (str (cl-ppcre:regex-replace-all "<(?!/?[\\w]+(\\s?[a-zA-Z]+=\"[^\\\"]*\")*>)" str "&lt;"))
+         (str (cl-ppcre:regex-replace-all "(</?[\\w]+(\\s?[a-zA-Z]+=\"[^\\\"]*\")*)>" str "\\1{{markdown.cl|gt}}"))
          (str (cl-ppcre:regex-replace-all ">" str "&gt;"))
          (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str ">")))
     str))
@@ -535,8 +535,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
         (cond ((char= type #\=)
                (concatenate 'string *nl* *nl* "<h1>" text "</h1>" *nl* *nl* *nl*))
               ((char= type #\-)
-               (concatenate 'string *nl* *nl* "<h2>" text "</h2>" *nl* *nl* *nl*)))))
-    :preserve-case t))
+               (concatenate 'string *nl* *nl* "<h2>" text "</h2>" *nl* *nl* *nl*)))))))
 
 (defun parse-atx-headers (str)
   "Parses ATX-style headers:
@@ -552,8 +551,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
              (num-hashes (- (aref re 0) (aref rs 0)))
              (tag (format nil "h~a" num-hashes))
              (text (subseq match (aref rs 1) (aref re 1))))
-        (concatenate 'string *nl* *nl* "<" tag ">" text "</" tag ">" *nl* *nl*)))
-    :preserve-case t))
+        (concatenate 'string *nl* *nl* "<" tag ">" text "</" tag ">" *nl* *nl*)))))
   
 ;; -----------------------------------------------------------------------------
 ;; list formatting
