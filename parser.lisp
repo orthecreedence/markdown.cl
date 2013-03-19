@@ -6,6 +6,9 @@
 (defparameter *link-references* nil
   "Holds a hash table mapping link ids to URLs.")
 
+(defparameter *blockquote-tmp-storage* nil
+  "Holds a hash table used for temporary blockquote storage.")
+
 ;; -----------------------------------------------------------------------------
 ;; block parsing
 ;; -----------------------------------------------------------------------------
@@ -59,7 +62,7 @@
   "Make horizontal rules. These are (almost?) always wrapped in <p> tags by the
    paragraph parser, but this is taken care of in the final parsing pass."
   (let* ((scanner-hr (cl-ppcre:create-scanner "^([*_-] ?){3,}$" :multi-line-mode t)))
-    (cl-ppcre:regex-replace-all scanner-hr str "<hr/>")))
+    (cl-ppcre:regex-replace-all scanner-hr str "<hr>")))
 
 ;; -----------------------------------------------------------------------------
 ;; code formatting
@@ -171,7 +174,7 @@
                              cleanup-paragraphs
                              cleanup-newlines)))
     (concatenate 'string
-      "<blockquote>" *nl*
+      *nl* "<blockquote>" *nl*
       (parse str :disable-parsers disabled-parsers)
       *nl* "</blockquote>")))
 
@@ -213,14 +216,18 @@
   "Parse blockquotes that occur inside a list. This must be a separate step,
    otherwise things can get wonky when parsing lists. The idea is to find
    blockquotes that are embedded in lists *before* the lists are processed, then
-   turn them into what the list parser views as a standard paragraph."
+   turn them into what the list parser views as a standard paragraph.
+   
+   Instead of injecting embedded blockquotes directly into the list string, they
+   are saved in a hash table and injected afterwards for more accurate parsing."
   (let* ((scanner-find-list-blockquote
            (cl-ppcre:create-scanner
-             "(\\n([*+-]|[0-9]+\\. )[^\\n]+(\\n(?! *([*+-]|[0-9]+\\. ))[^\\n]+)*)((\\n\\s*\\n\\s{4,}(?!>)[^\\n]+)*)\\n?((\\n {4,}>[^\\n]*)+)"
+             "(\\n([*+-]|[0-9]+\\. )[^\\n]+(\\n\\n?(?! *([*+-]|[0-9]+\\.|>))[^\\n]+)*)\\n?((\\n {4,}>[^\\n]*)+)"
              :single-line-mode t))
          (scanner-format-blockquote (cl-ppcre:create-scanner
                                       "^\\s+>"
                                       :multi-line-mode t))
+         (scanner-clean-newlines (cl-ppcre:create-scanner "\\n+" :single-line-mode t))
          (str (cl-ppcre:regex-replace-all
                 scanner-find-list-blockquote
                 str
@@ -237,22 +244,42 @@
                          ;; get the original bullet text (between the bullet and
                          ;; the blockquote) prepared
                          (bullet (subseq match (aref rs 0) (aref re 0)))
-                         (bullet (if (aref rs 5)
-                                     (concatenate 'string bullet
-                                                  (subseq match (aref rs 5) (aref re 5)))
-                                     bullet))
+                         ;(bullet (if (aref rs 5)
+                         ;            (concatenate 'string bullet
+                         ;                         (subseq match (aref rs 5) (aref re 5)))
+                         ;            bullet))
                          ;; pull out the blockquote and process it
-                         (blockquote (subseq match (aref rs 6) (aref re 6)))
+                         (blockquote (subseq match (aref rs 4) (aref re 4)))
                          (blockquote (cl-ppcre:regex-replace-all
                                        scanner-format-blockquote
                                        blockquote
                                        ">"))
-                         (blockquote (concatenate 'string *nl* blockquote)))
-                    ;; sew them back together, parsing the blockquote as we go along
-                    (concatenate 'string bullet (parse-blockquote blockquote)))))))
+                         (blockquote (concatenate 'string *nl* blockquote))
+                         (blockquote (parse-blockquote blockquote))
+                         (blockquote (cl-ppcre:regex-replace-all scanner-clean-newlines blockquote *nl*)))
+                    (let ((blockquote-id (hash-table-count *blockquote-tmp-storage*)))
+                      ;; save the blockquote for later
+                      (setf (gethash blockquote-id *blockquote-tmp-storage*) blockquote)
+                      ;; sew the original bullet onto the blockquote placeholder
+                      (concatenate 'string bullet *nl* *nl* "    {{markdown.cl|blockquote|" (write-to-string blockquote-id) "}}")))))))
     (if (cl-ppcre:scan scanner-find-list-blockquote str)
         (parse-embedded-blockquote str)
         str)))
+
+(defun inject-saved-blockquotes (str)
+  (let* ((scanner-blockquote-placeholder (cl-ppcre:create-scanner "{{markdown\\.cl\\|blockquote\\|([^}]+)}}"
+                                                                  :multi-line-mode t)))
+    (cl-ppcre:regex-replace-all
+      scanner-blockquote-placeholder
+      str
+      (lambda (match &rest regs)
+        (let* ((regs (cddddr regs))
+               (rs (car regs))
+               (re (cadr regs))
+               (id (parse-integer (subseq match (aref rs 0) (aref re 0))))
+               (text (gethash id *blockquote-tmp-storage*))
+               (text (or text "")))
+          text)))))
 
 (defun parse-blockquote (str)
   "Parse a blockquote recursively, using the passed-in regex."
@@ -280,7 +307,7 @@
    
    Note that as a side effect, this also gathers image references =]."
   (let* ((scanner-find-link-refs (cl-ppcre:create-scanner
-                                   "\\n {0,3}\\[([^\\]]+)\\]:( +[^\\s]+)( *\\n? *[\"'(](.*?)[\"')])? *"
+                                   "\\n {0,3}\\[([^\\]]+)\\]: +([^\\s]+)( *\\n? *[\"'(](.*?)[\"')])? *"
                                    :single-line-mode t
                                    :case-insensitive-mode t)))
     (cl-ppcre:regex-replace-all
@@ -624,6 +651,11 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
    items, making sure to only do this for items using the correct indentation
    level.
    
+   List items inject any saved blockquotes (via inject-saved-blockquotes) before
+   moving on to paragraph processing. This step is essential because a lot of
+   the blockquote formatting can screw up the splitting of list items correctly,
+   resulting in <p> blocks in really weird places.
+   
    List items are run through the paragraph filters, have a minimal amount of
    formatting applied to make sure the recursion goes smoothly, and then are
    recursively concated onto the final string."
@@ -662,7 +694,8 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                      ;; been properly processed
                      (reduce (lambda (concat part)
                                ;; do some paragraph/list formatting
-                               (let* ((part (parse-paragraphs part :pre-formatted t))
+                               (let* ((part (inject-saved-blockquotes part))
+                                      (part (parse-paragraphs part :pre-formatted t))
                                       ;; make sure first list item in this parsed
                                       ;; block starts with two \n\n so it gets properly
                                       ;; separated
@@ -821,7 +854,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
       "{{markdown\\.cl\\|paragraph\\|open}}[\\n\\s]+<hr>[\\n\\s]+{{markdown\\.cl\\|paragraph\\|close}}"
       :single-line-mode t)
     str
-    "<hr>"))
+    "<hr/>"))
 
 (defun cleanup-paragraphs (str)
   "Remove any empty paragraph blocks (it does happen sometimes) and convert all
@@ -866,10 +899,15 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 
 (defun parse (str &key disable-parsers)
   "Parse a markdown string into HTML."
+  (when (string= (string-trim '(#\newline #\space) str) "")
+    (return-from parse str))
   (let* ((str (prepare-markdown-string str))
          (*link-references* (if *link-references*
                                 *link-references*
                                 (make-hash-table :test #'equal)))
+         (*blockquote-tmp-storage* (if *blockquote-tmp-storage*
+                                            *blockquote-tmp-storage*
+                                            (make-hash-table :test #'eq)))
          (handlers-pre-block '(parse-escaped-characters
                                gather-link-references
                                parse-atx-headers
