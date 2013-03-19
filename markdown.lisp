@@ -26,13 +26,24 @@
 ;; -----------------------------------------------------------------------------
 ;; entity parsing
 ;; -----------------------------------------------------------------------------
+(defun parse-escaped-characters (str)
+  "Parse characters that are escaped with \\"
+  str)
+
 (defun parse-entities (str)
   "Replace non-purposeful entities with escaped equivalents."
   (let* ((str (cl-ppcre:regex-replace-all "&(?![a-z]{2,6};)" str "&amp;"))
          (str (cl-ppcre:regex-replace-all "<(?!/?[a-z0-9]+(\s?[a-z]+=\"[^\\\"]+\")*>)" str "&lt;"))
-         (str (cl-ppcre:regex-replace-all "(</?[a-z0-9]+(\s?[a-z]+=\"[^\\\"]+\")*)>" str "\\1&gtLOL;"))
+         (str (cl-ppcre:regex-replace-all "(</?[a-z0-9]+(\s?[a-z]+=\"[^\\\"]+\")*)>" str "\\1{{markdown.cl|gt}}"))
          (str (cl-ppcre:regex-replace-all ">" str "&gt;"))
-         (str (cl-ppcre:regex-replace-all "&gtLOL;" str ">")))
+         (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str ">")))
+    str))
+
+(defun escape-html (str)
+  "Meant to be called on text inside code blocks."
+  (let* ((str (cl-ppcre:regex-replace-all "&" str "&amp;"))
+         (str (cl-ppcre:regex-replace-all "<" str "&lt;"))
+         (str (cl-ppcre:regex-replace-all ">" str "&gt;")))
     str))
 
 ;; -----------------------------------------------------------------------------
@@ -47,6 +58,47 @@
 ;; -----------------------------------------------------------------------------
 ;; code formatting
 ;; -----------------------------------------------------------------------------
+(defun parse-not-in-code (str parser-fn &key escape)
+  "Given a string and a parsing function, run the parsing function over the
+   parts of the string that are not inside any code block."
+  (let ((parts (cl-ppcre:split
+                 (cl-ppcre:create-scanner "<(?=/?code>)" :multi-line-mode t)
+                 str))
+        (depth 0))
+    (reduce
+      (lambda (a b)
+        (cond ((eq (search "code>" b) 0)
+               (incf depth))
+              ((eq (search "/code>" b) 0)
+               (decf depth)))
+        (concatenate 'string
+                     (when a
+                       (concatenate 'string a "<"))
+                     (cond ((zerop depth)
+                            (funcall parser-fn b))
+                           (escape
+                            (let ((>-pos (1+ (position #\> b))))
+                              (concatenate 'string
+                                           (subseq b 0 >-pos)
+                                           (escape-html (subseq b >-pos)))))
+                           (t b))))
+                            
+      parts :initial-value nil)))
+
+(defun escape-code-internals (str)
+  "Escape code segments:
+   
+   <code><div>&copy;</div></code>
+   
+   becomes:
+   
+   <code>&lt;div&gt;&amp;copy;&lt;/div&gt;</code>
+   
+   It does this using the parse-not-in-code function, which operates inside code
+   blocks, with the identity function (ie don't change anything, just escape the
+   code block internals)."
+  (parse-not-in-code str 'identity :escape t))
+  
 (defun format-code (str &key embedded)
   "Sanely formats code blocks."
   (let* ((scanner-shift (cl-ppcre:create-scanner "^ {4}" :multi-line-mode t))
@@ -592,6 +644,43 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
     str))
 
 ;; -----------------------------------------------------------------------------
+;; span-level functions
+;; -----------------------------------------------------------------------------
+(defun do-parse-double-code (str)
+  "Parse ``...`` code blocks."
+  (let* ((scanner-code (cl-ppcre:create-scanner "``(.*?)``" :single-line-mode t))
+         (str (cl-ppcre:regex-replace-all scanner-code str "<code>\\1</code>")))
+    str))
+
+(defun do-parse-code (str)
+  "Parse `...` code blocks."
+  (let* ((scanner-code (cl-ppcre:create-scanner "`(.*?)`" :single-line-mode t))
+         (str (cl-ppcre:regex-replace-all scanner-code str "<code>\\1</code>")))
+    str))
+
+(defun parse-inline-code (str)
+  "Parse `...` code blocks."
+  (let* ((str (parse-not-in-code str 'do-parse-double-code))
+         (str (parse-not-in-code str 'do-parse-code)))
+    str))
+
+(defun do-parse-em (str)
+  "Parse *, _, **, and __."
+  (let* ((scanner-em*-process (cl-ppcre:create-scanner "\\*(.*?)\\*" :single-line-mode t))
+         (scanner-em_-process (cl-ppcre:create-scanner "_(.*?)_" :single-line-mode t))
+         (scanner-strong*-process (cl-ppcre:create-scanner "\\*\\*(.*?)\\*\\*" :single-line-mode t))
+         (scanner-strong_-process (cl-ppcre:create-scanner "__(.*?)__" :single-line-mode t))
+         (str (cl-ppcre:regex-replace-all scanner-em*-process str "<em>\\1</em>"))
+         (str (cl-ppcre:regex-replace-all scanner-em_-process str "<em>\\1</em>"))
+         (str (cl-ppcre:regex-replace-all scanner-strong*-process str "<strong>\\1</strong>"))
+         (str (cl-ppcre:regex-replace-all scanner-strong_-process str "<strong>\\1</strong>")))
+    str))
+
+(defun parse-em (str)
+  "Parse *, _, **, and __, but only in non-code blocks."
+  (parse-not-in-code str 'do-parse-em))
+
+;; -----------------------------------------------------------------------------
 ;; cleanup functions
 ;; -----------------------------------------------------------------------------
 (defun cleanup-newlines (str)
@@ -628,6 +717,10 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
          (str (cl-ppcre:regex-replace-all scanner-p-close str "</p>")))
     str))
 
+(defun cleanup-escaped-characters (str)
+  "Convert escaped characters back to non-escaped."
+  str)
+
 ;; -----------------------------------------------------------------------------
 ;; general markdown functions
 ;; -----------------------------------------------------------------------------
@@ -653,6 +746,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
   "Parse a markdown string into HTML."
   (let* ((str (prepare-markdown-string str))
          (handlers-pre-block '(
+                               parse-escaped-characters
                                parse-atx-headers
                                parse-setext-headers
                                parse-embedded-code
@@ -667,12 +761,16 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                                 parse-links
                                 parse-lists
                                 parse-paragraphs
+                                parse-inline-code
                                 parse-entities
+                                parse-em
                                 ))
          (handlers-post-reduce '(
+                                 escape-code-internals
                                  cleanup-newlines
                                  cleanup-hr
                                  cleanup-paragraphs
+                                 cleanup-escaped-characters
                                  )))
     (dolist (handler handlers-pre-block)
       (unless (find handler disable-parsers)
@@ -709,11 +807,13 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 header1
 ====
 this is a paragraph
+html iz kewl `&mdash;` as shown in that code block
+it has ``some code (which <strong>use</strong> `)``
 
 * * *
 
 * some bullets
-+ are good
++ are *good*
   - and dont confuse parsers
   - lol sub bullets
 - for formatting
@@ -721,9 +821,10 @@ this is a paragraph
 
 i made code LOL
 ---------------
-    (defun code ()
-      ;; this is some code
-      (+ 5 6))
+
+    <div>
+        &copy;
+    </div>
 
 1. numbers
 2. can be useful
@@ -741,7 +842,7 @@ i made code LOL
 sometimes i like to quote idiots
 
 -   i want to have a bullet
-    with two paragraphs
+    with two `paragraphs` lol
 
     > here's a paragraphed
     > blockquote with
@@ -749,7 +850,7 @@ sometimes i like to quote idiots
 
     so here's the scoop
 
-        and here's a code block!
+        and here's a `code` block!
 
     > another blockquote
     > in a list
@@ -775,7 +876,7 @@ end of markdown...
 -  bullet1 is a great bullet
   - fuck this shit
   1. this is great!!!
-  2. ohhhh heyyyyy yeah!!
+  2. ohhhh *heyyyyy yeah!!*
 - bullet 2 is ucking grand
 -   this is a list item with multiple paragraphs
 
@@ -824,6 +925,11 @@ here's a test
 (defun test-p (&optional show)
   (format t "--------------~%")
   (let* ((str "
+title
+-----
+    <div>
+        &copy;
+    </div>
 ")
          (str (parse-string str)))
     (when show str)))
