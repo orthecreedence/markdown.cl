@@ -36,8 +36,8 @@
 (defun parse-entities (str)
   "Replace non-purposeful entities with escaped equivalents."
   (let* ((str (cl-ppcre:regex-replace-all "&(?![a-z]{2,6};)" str "&amp;"))
-         (str (cl-ppcre:regex-replace-all "<(?!/?[a-z0-9]+(\\s?[a-z]+=\"[^\\\"]+\")*>)" str "&lt;"))
-         (str (cl-ppcre:regex-replace-all "(</?[a-z0-9]+(\\s?[a-z]+=\"[^\\\"]+\")*)>" str "\\1{{markdown.cl|gt}}"))
+         (str (cl-ppcre:regex-replace-all "<(?!/?[a-z0-9]+(\\s?[a-z]+=\"[^\\\"]*\")*>)" str "&lt;"))
+         (str (cl-ppcre:regex-replace-all "(</?[a-z0-9]+(\\s?[a-z]+=\"[^\\\"]*\")*)>" str "\\1{{markdown.cl|gt}}"))
          (str (cl-ppcre:regex-replace-all ">" str "&gt;"))
          (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str ">")))
     str))
@@ -276,8 +276,8 @@
    and parse them into the *link-references* hash table. The data will be pulled
    out when parse-links is called."
   (let* ((scanner-find-link-refs (cl-ppcre:create-scanner
-                                   "^\\[([^\\]]+)\\]: *([^\\s]+)( +[\"'(](.*?)[\"')])? *$"
-                                   :multi-line-mode t
+                                   "\\n\\[([^\\]]+)\\]:( +[^\\s]+) *\\n? *([\"'(](.*?)[\"')])? *"
+                                   :single-line-mode t
                                    :case-insensitive-mode t)))
     (cl-ppcre:regex-replace-all
       scanner-find-link-refs
@@ -1041,6 +1041,7 @@ it is [meant](http://wikipedia.com/meaning \"meaning\")
 to [test][test-link] and shit. [test-link][].
 
 [link1]: http://mylinktest.com/why-links-r-kewl
+  (the title can be on its own line)
 [test-link]: http://test.com/markdown (a title)
 
 ")
