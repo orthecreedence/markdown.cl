@@ -59,7 +59,7 @@
   "Make horizontal rules. These are (almost?) always wrapped in <p> tags by the
    paragraph parser, but this is taken care of in the final parsing pass."
   (let* ((scanner-hr (cl-ppcre:create-scanner "^([*_-] ?){3,}$" :multi-line-mode t)))
-    (cl-ppcre:regex-replace-all scanner-hr str "<hr>")))
+    (cl-ppcre:regex-replace-all scanner-hr str "<hr/>")))
 
 ;; -----------------------------------------------------------------------------
 ;; code formatting
@@ -280,7 +280,7 @@
    
    Note that as a side effect, this also gathers image references =]."
   (let* ((scanner-find-link-refs (cl-ppcre:create-scanner
-                                   "\\n {0,3}\\[([^\\]]+)\\]:( +[^\\s]+) *\\n? *([\"'(](.*?)[\"')])? *"
+                                   "\\n {0,3}\\[([^\\]]+)\\]:( +[^\\s]+)( *\\n? *[\"'(](.*?)[\"')])? *"
                                    :single-line-mode t
                                    :case-insensitive-mode t)))
     (cl-ppcre:regex-replace-all
