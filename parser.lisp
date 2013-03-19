@@ -335,7 +335,7 @@
 
 (defun make-image (url alt title)
   (concatenate 'string
-               "<img src=\"" url "\""
+               "<img src=\"" url "\" "
                "alt=\"" alt "\""
                (when title
                  (concatenate 'string " title=\"" title "\""))
