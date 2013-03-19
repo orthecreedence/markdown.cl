@@ -264,7 +264,6 @@
              (text (subseq match (aref rs 0) (aref re 0))))
         (concatenate 'string *nl* (format-blockquote text))))))
 
-
 ;; -----------------------------------------------------------------------------
 ;; link/image formatting
 ;; -----------------------------------------------------------------------------
@@ -922,6 +921,9 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
   (let ((contents (file-contents path)))
     (parse-string contents)))
 
+;; -----------------------------------------------------------------------------
+;; temporary tests
+;; -----------------------------------------------------------------------------
 (defun test (&optional show)
   (format t "--------------~%")
   (let* ((str (format nil "~
