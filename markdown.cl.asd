@@ -1,4 +1,4 @@
-(asdf:defsystem markdown
+(asdf:defsystem markdown.cl
   :author "Andrew Danger Lyon <orthecreedence@gmail.com>"
   :license "MIT"
   :version "0.0.1"
