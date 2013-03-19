@@ -31,7 +31,10 @@
 ;; -----------------------------------------------------------------------------
 (defun parse-escaped-characters (str)
   "Parse characters that are escaped with \\"
-  str)
+  (cl-ppcre:regex-replace-all
+    "\\\\([.\\\`*_\\[\\]{}#+!-])"
+    str
+    "{{markdown.cl|escaped|\\1}}"))
 
 (defun parse-entities (str)
   "Replace non-purposeful entities with escaped equivalents."
@@ -361,12 +364,16 @@
 (defun parse-quick-links (str)
   "Parse quick-link style:
      <http://killtheradio.net>"
-  (let* ((scanner-links-quick (cl-ppcre:create-scanner "<([0-9a-z]+://[^>]+)>" :case-insensitive-mode t)))
-    (cl-ppcre:regex-replace-all
-      scanner-links-quick
-      str
-      "<a href=\"\\1\">\\1</a>"
-      :preserve-case t)))
+  (let* ((scanner-links-quick (cl-ppcre:create-scanner "<([0-9a-z]+://[^>]+)>" :case-insensitive-mode t))
+         (scanner-email-quick (cl-ppcre:create-scanner "<([^>]+@[^>]+)>"))
+         (str (cl-ppcre:regex-replace-all scanner-links-quick str "<a href=\"\\1\">\\1</a>" :preserve-case t))
+         (str (cl-ppcre:regex-replace-all
+                scanner-email-quick
+                str
+                ;; TODO entity escaping/obfuscation
+                "<a href=\"mailto:\\1\">\\1</a>"
+                :preserve-case t)))
+    str))
   
 (defun parse-links (str)
   "Parse all link styles. It's important to note that because the image/link
@@ -832,7 +839,10 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 
 (defun cleanup-escaped-characters (str)
   "Convert escaped characters back to non-escaped."
-  str)
+  (cl-ppcre:regex-replace-all
+    "{{markdown\\.cl\\|escaped\\|(.)}}"
+    str
+    "\\1"))
 
 ;; -----------------------------------------------------------------------------
 ;; general markdown functions
@@ -861,8 +871,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
          (*link-references* (if *link-references*
                                 *link-references*
                                 (make-hash-table :test #'equal)))
-         (handlers-pre-block '(
-                               parse-escaped-characters
+         (handlers-pre-block '(parse-escaped-characters
                                gather-link-references
                                parse-atx-headers
                                parse-setext-headers
@@ -870,25 +879,20 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                                parse-embedded-blockquote
                                parse-horizontal-rule
                                pre-format-paragraph-lists
-                               convert-lazy-blockquote-to-standard
-                               ))
-         (handlers-post-block '(
-                                parse-blockquote
+                               convert-lazy-blockquote-to-standard))
+         (handlers-post-block '(parse-blockquote
                                 parse-code
                                 parse-links
                                 parse-lists
                                 parse-paragraphs
                                 parse-inline-code
                                 parse-entities
-                                parse-em
-                                ))
-         (handlers-post-reduce '(
-                                 escape-code-internals
+                                parse-em))
+         (handlers-post-reduce '(escape-code-internals
                                  cleanup-newlines
                                  cleanup-hr
                                  cleanup-paragraphs
-                                 cleanup-escaped-characters
-                                 )))
+                                 cleanup-escaped-characters)))
     (dolist (handler handlers-pre-block)
       (unless (find handler disable-parsers)
         (setf str (funcall handler str))))
@@ -935,6 +939,8 @@ to [test][test-link] and shit. [test-link][].
 [test-link]: http://test.com/markdown (a title)
 
 * * *
+
+1946\\. was a good year
 
 * some bullets
 + are *good*
@@ -1057,7 +1063,8 @@ it has ``some code (which <strong>use</strong> `)``
 
 this is a paragraph [with some][link1] links in it.
 it is [meant](http://wikipedia.com/meaning \"meaning\")
-to [test][test-link] and shit. [test-link][].
+to [test][test-link] and shit. [test-link][] so email
+me at <orthecreedence@gmail.com>
 
 [link1]: http://mylinktest.com/why-links-r-kewl
   (the title can be on its own line)
