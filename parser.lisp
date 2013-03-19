@@ -339,7 +339,7 @@
                "alt=\"" alt "\""
                (when title
                  (concatenate 'string " title=\"" title "\""))
-               ">"))
+               "/>"))
 
 (defun parse-links-ref (str)
   "Parse links that are reference-style:
