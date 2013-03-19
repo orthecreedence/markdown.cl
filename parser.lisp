@@ -39,7 +39,7 @@
     str
     "{{markdown.cl|escaped|\\1}}"))
 
-(defun parse-entities (str)
+(defun do-parse-entities (str)
   "Replace non-purposeful entities with escaped equivalents."
   (let* ((str (cl-ppcre:regex-replace-all "&(?!#?[\\w]{2,6};)" str "&amp;"))
          (str (cl-ppcre:regex-replace-all "<(?!/?[\\w]+(\\s?[a-zA-Z]+=\"[^\\\"]*\")*>)" str "&lt;"))
@@ -47,6 +47,26 @@
          (str (cl-ppcre:regex-replace-all ">" str "&gt;"))
          (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str ">")))
     str))
+
+(defun parse-entities (str)
+  "On top of parsing entities:
+   
+   I am a sicko & a perv   =>   I am a sicko &amp; a perv
+   Dogs > cats             =>   Dogs &gt; cats
+   <em>I'm the best</em>   =>   <em>I'm the best</em>
+   
+   also escape the inside of <code> blocks:
+   
+   <code><div>&copy;</div></code>
+   
+   becomes:
+   
+   <code>&lt;div&gt;&amp;copy;&lt;/div&gt;</code>
+   
+   It does this using the parse-not-in-code function, which operates inside code
+   blocks, using do-parse-entities outside code blocks, and escaping everything
+   inside code blocks."
+  (parse-not-in-code str 'do-parse-entities :escape t))
 
 (defun escape-html (str)
   "Meant to be called on text inside code blocks."
@@ -96,20 +116,6 @@
                             
       parts :initial-value nil)))
 
-(defun escape-code-internals (str)
-  "Escape code segments:
-   
-   <code><div>&copy;</div></code>
-   
-   becomes:
-   
-   <code>&lt;div&gt;&amp;copy;&lt;/div&gt;</code>
-   
-   It does this using the parse-not-in-code function, which operates inside code
-   blocks, with the identity function (ie don't change anything, just escape the
-   code block internals)."
-  (parse-not-in-code str 'identity :escape t))
-  
 (defun format-code (str &key embedded)
   "Sanely formats code blocks."
   (let* ((scanner-shift (cl-ppcre:create-scanner "^ {4}" :multi-line-mode t))
@@ -178,6 +184,7 @@
                 str
                 ""))
          (disabled-parsers '(convert-lazy-blockquote-to-standard
+                             parse-entities
                              escape-code-internals
                              cleanup-paragraphs
                              cleanup-newlines
@@ -936,9 +943,8 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                                 parse-lists
                                 parse-paragraphs
                                 parse-inline-code
-                                parse-entities
                                 parse-em))
-         (handlers-post-reduce '(escape-code-internals
+         (handlers-post-reduce '(parse-entities
                                  cleanup-code
                                  cleanup-newlines
                                  cleanup-hr
