@@ -177,7 +177,7 @@ line2"))))
  ))))
 
 (test everything
-  "Test all markdown parsers, when shoves together in a small space."
+  "Test many markdown parsers, when shoved together in a small space."
   (let* ((str "
 header1
 ====

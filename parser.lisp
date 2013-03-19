@@ -26,7 +26,7 @@
                 str
                 (concatenate 'string "\\1" *nl* *nl*))))
     (cl-ppcre:split
-      (cl-ppcre:create-scanner "(?<=\\n\\n)(?! {4,})" :case-insensitive-mode t :single-line-mode t)
+      (cl-ppcre:create-scanner "(?<=\\n\\n)" :case-insensitive-mode t :single-line-mode t)
       str)))
 
 ;; -----------------------------------------------------------------------------
@@ -73,25 +73,25 @@
    
    Also has the ability to escape the internals of code blocks."
   (let ((parts (cl-ppcre:split
-                 (cl-ppcre:create-scanner "<(?=/?code>)" :multi-line-mode t)
+                 (cl-ppcre:create-scanner "{{(?=markdown\\.cl\\|code)" :multi-line-mode t)
                  str))
         (depth 0))
     (reduce
       (lambda (a b)
-        (cond ((eq (search "code>" b) 0)
+        (cond ((eq (search "markdown.cl|code|open" b) 0)
                (incf depth))
-              ((eq (search "/code>" b) 0)
+              ((eq (search "markdown.cl|code|close" b) 0)
                (decf depth)))
         (concatenate 'string
                      (when a
-                       (concatenate 'string a "<"))
+                       (concatenate 'string a "{{"))
                      (cond ((zerop depth)
                             (funcall parser-fn b))
                            (escape
-                            (let ((>-pos (1+ (position #\> b))))
+                            (let ((tag-end-pos (+ 2 (position #\} b))))
                               (concatenate 'string
-                                           (subseq b 0 >-pos)
-                                           (escape-html (subseq b >-pos)))))
+                                           (subseq b 0 tag-end-pos)
+                                           (escape-html (subseq b tag-end-pos)))))
                            (t b))))
                             
       parts :initial-value nil)))
@@ -136,7 +136,11 @@
              (rs (car regs))
              (re (cadr regs))
              (text (subseq match (aref rs 0) (aref re 0))))
-        (concatenate 'string "{{markdown.cl|newline}}{{markdown.cl|newline}}<pre><code>" (format-code text :embedded t) "</code></pre>" *nl*)))))
+        (concatenate 'string
+                     "{{markdown.cl|newline}}{{markdown.cl|newline}}"
+                     "<pre>{{markdown.cl|code|open}}"
+                     (format-code text :embedded t)
+                     "{{markdown.cl|code|close}}</pre>" *nl*)))))
 
 (defun parse-code (str)
   "Parses code sections in markdown."
@@ -144,14 +148,17 @@
          (in-code (cl-ppcre:scan scanner-in-code str)))
     (if in-code
         (cl-ppcre:regex-replace-all
-          (cl-ppcre:create-scanner "\\n\\n(( {4,}[^\\n]*\\n)+(?=\\n))" :single-line-mode t)
+          (cl-ppcre:create-scanner "\\n+(( {4,}[^\\n]*\\n)+(?=\\n))" :single-line-mode t)
           str
           (lambda (match &rest regs)
             (let* ((regs (cddddr regs))
                    (rs (car regs))
                    (re (cadr regs))
                    (text (subseq match (aref rs 0) (aref re 0))))
-              (concatenate 'string "{{markdown.cl|newline}}<pre><code>" (format-code text) "</code></pre>" *nl*))))
+              (concatenate 'string
+                           "{{markdown.cl|newline}}<pre>{{markdown.cl|code|open}}"
+                           (format-code text)
+                           "{{markdown.cl|code|close}}</pre>" *nl*))))
         str)))
 
 ;; -----------------------------------------------------------------------------
@@ -171,8 +178,10 @@
                 str
                 ""))
          (disabled-parsers '(convert-lazy-blockquote-to-standard
+                             escape-code-internals
                              cleanup-paragraphs
-                             cleanup-newlines)))
+                             cleanup-newlines
+                             cleanup-code)))
     (concatenate 'string
       *nl* "<blockquote>" *nl*
       (parse str :disable-parsers disabled-parsers)
@@ -799,13 +808,13 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 (defun do-parse-double-code (str)
   "Parse ``...`` code blocks."
   (let* ((scanner-code (cl-ppcre:create-scanner "``(.*?)``" :single-line-mode t))
-         (str (cl-ppcre:regex-replace-all scanner-code str "<code>\\1</code>")))
+         (str (cl-ppcre:regex-replace-all scanner-code str "{{markdown.cl|code|open}}\\1{{markdown.cl|code|close}}")))
     str))
 
 (defun do-parse-code (str)
   "Parse `...` code blocks."
   (let* ((scanner-code (cl-ppcre:create-scanner "`(.*?)`" :single-line-mode t))
-         (str (cl-ppcre:regex-replace-all scanner-code str "<code>\\1</code>")))
+         (str (cl-ppcre:regex-replace-all scanner-code str "{{markdown.cl|code|open}}\\1{{markdown.cl|code|close}}")))
     str))
 
 (defun parse-inline-code (str)
@@ -833,6 +842,12 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 ;; -----------------------------------------------------------------------------
 ;; cleanup functions
 ;; -----------------------------------------------------------------------------
+(defun cleanup-code (str)
+  "Let's convert our {{markdown.cl|code|...}} tags to <code> tags."
+  (let* ((str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|code\\|open}}" str "<code>"))
+         (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|code\\|close}}" str "</code>")))
+    str))
+
 (defun cleanup-newlines (str)
   "Here we remove excess newlines and convert any markdown.cl newlines into real
    ones."
@@ -924,6 +939,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                                 parse-entities
                                 parse-em))
          (handlers-post-reduce '(escape-code-internals
+                                 cleanup-code
                                  cleanup-newlines
                                  cleanup-hr
                                  cleanup-paragraphs
