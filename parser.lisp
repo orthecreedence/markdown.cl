@@ -36,13 +36,13 @@
     str
     "{{markdown.cl|escaped|\\1}}"))
 
-(defun do-parse-entities (str)
+(defun do-parse-entities (str &key use-markdown-tags)
   "Replace non-purposeful entities with escaped equivalents."
-  (let* ((str (cl-ppcre:regex-replace-all "&(?!#?[\\w]{2,6};)" str "&amp;"))
-         (str (cl-ppcre:regex-replace-all "<(?!/?[\\w]+(\\s?[a-zA-Z]+=\"[^\\\"]*\")*/?>)" str "&lt;"))
-         (str (cl-ppcre:regex-replace-all "(</?[\\w]+(\\s?[a-zA-Z]+=\"[^\\\"]*\")*)(/?)>" str "\\1\\3{{markdown.cl|gt}}"))
-         (str (cl-ppcre:regex-replace-all ">" str "&gt;"))
-         (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str ">")))
+  (let* ((str (cl-ppcre:regex-replace-all "&(?!#?[\\w]{2,6};)" str (if use-markdown-tags "{{markdown.cl|amp}}" "&amp;")))
+         (str (cl-ppcre:regex-replace-all "<(?!/?[\\w]+(\\s?[a-zA-Z]+=\"[^\\\"]*\")*/?>)" str (if use-markdown-tags "{{markdown.cl|lt}}" "&lt;")))
+         (str (cl-ppcre:regex-replace-all "(</?[\\w]+(\\s?[a-zA-Z]+=\"[^\\\"]*\")*)(/?)>" str "\\1\\3{{markdown.cl|gt-tmp}}"))
+         (str (cl-ppcre:regex-replace-all ">" str (if use-markdown-tags "{{markdown.cl|gt}}" "&gt;")))
+         (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt-tmp}}" str ">")))
     str))
 
 (defun parse-entities (str)
