@@ -39,8 +39,8 @@
 (defun do-parse-entities (str)
   "Replace non-purposeful entities with escaped equivalents."
   (let* ((str (cl-ppcre:regex-replace-all "&(?!#?[\\w]{2,6};)" str "&amp;"))
-         (str (cl-ppcre:regex-replace-all "<(?!/?[\\w]+(\\s?[a-zA-Z]+=\"[^\\\"]*\")*>)" str "&lt;"))
-         (str (cl-ppcre:regex-replace-all "(</?[\\w]+(\\s?[a-zA-Z]+=\"[^\\\"]*\")*)>" str "\\1{{markdown.cl|gt}}"))
+         (str (cl-ppcre:regex-replace-all "<(?!/?[\\w]+(\\s?[a-zA-Z]+=\"[^\\\"]*\")*/?>)" str "&lt;"))
+         (str (cl-ppcre:regex-replace-all "(</?[\\w]+(\\s?[a-zA-Z]+=\"[^\\\"]*\")*)(/?)>" str "\\1\\3{{markdown.cl|gt}}"))
          (str (cl-ppcre:regex-replace-all ">" str "&gt;"))
          (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str ">")))
     str))

@@ -18,9 +18,9 @@ they *choose* not to.
 [panda]: http://www.pandas.com/panda1.jpg
 "))
 '("html" NIL
- ("p" NIL
-  "This is a paragraph with a <img src=\"http://www.pandas.com/panda1.jpg\" alt=\"panda\"/> picture of a"
-  ("a" (("href" "http://wikipedia.com/pandas")) "panda")
+ ("p" NIL "This is a paragraph with a"
+  ("img" (("alt" "panda") ("src" "http://www.pandas.com/panda1.jpg")))
+  "picture of a" ("a" (("href" "http://wikipedia.com/pandas")) "panda")
   "in it. Pandas are a"
   ("a"
    (("href"
@@ -32,8 +32,11 @@ why pandas are so"
  ("p" NIL "They could be"
   ("a" (("title" "Rip!") ("href" "/my-page/on-ripping"))
    "ripping us limb from limb")
-  "as seen in this
-<img src=\"/images/rip.jpg\" alt=\"ripping\" title=\"Photo of a shirt being ripped to shreds by a bear\"/> photo but
+  "as seen in this"
+  ("img"
+   (("title" "Photo of a shirt being ripped to shreds by a bear")
+    ("alt" "ripping") ("src" "/images/rip.jpg")))
+  "photo but
 they"
   ("em" NIL "choose") "not to.")))))
 
@@ -157,7 +160,7 @@ if(net_falls_over_boys())
 
 (test lists
   "Test a bunch of lists all crammed together in a pile."
-  (let* ((str "
+  (is (equal (tree (parse "
 -  bullet1 is a great bullet
   - sub bullet one has
   multiple lines!
@@ -205,10 +208,7 @@ here's a test
 
 - items
 "
-)
-         (str (parse str)))
-    (is (equal
-          (tree str)
+))
 '("html" NIL
  ("ul" NIL
   ("li" NIL "bullet1 is a great bullet"
@@ -237,12 +237,11 @@ line2"))))
   ("li" NIL ("p" NIL "and another here's a test")
    ("p" NIL "multi-paragraph list") ("p" NIL "item")))
  ("ul" NIL ("li" NIL ("p" NIL "paragraph")) ("li" NIL ("p" NIL "list"))
-  ("li" NIL ("p" NIL "items"))))
- ))))
+  ("li" NIL ("p" NIL "items")))))))
 
 (test everything
   "Test many markdown parsers, when shoved together in a small space."
-  (let* ((str "
+(is (equal (tree (parse "
 header1
 ====
 this is a paragraph
@@ -315,16 +314,14 @@ also 5 > 4 normally
 > fuck
 
 end of markdown...
-")
-         (str (parse str)))
-    (is (equal
-          (tree str)
+"))
 '("html" NIL ("h1" NIL "header1")
  ("p" NIL "this is a paragraph
 html iz kewl"
   ("code" NIL "&mdash;") "as shown in that code block
 it has"
-  ("code" NIL "some code (which <strong>use</strong> `)"))
+  ("code" NIL) "some code (which")
+ ("p" NIL ("strong" NIL "use")) ("p" NIL ("code" NIL ")") "`")
  ("p" NIL "this is a paragraph"
   ("a" (("href" "http://mylinktest.com/why-links-r-kewl")) "with some")
   "links in it.
@@ -345,9 +342,9 @@ it is"
   ("li" NIL "for formatting because they wurklol"))
  ("h2" NIL "i made code LOL")
  ("pre" NIL
-  ("code" NIL "<div>
+  ("code" NIL "&lt;div&gt;
     &copy;
-</div>"))
+&lt;/div&gt;"))
  ("ol" NIL ("li" NIL "numbers")
   ("li" NIL "can be useful"
    ("ol" NIL ("li" NIL "but only") ("li" NIL "sometimes")))
@@ -373,10 +370,10 @@ in a list"))
  ("blockquote" NIL ("h2" NIL "header quote")
   ("p" NIL "quote paragraph
 lol paragraph
-also 5 > 4 normally"))
+also 5 &gt; 4 normally"))
  ("blockquote" NIL ("p" NIL "poop") ("blockquote" NIL ("p" NIL "shit"))
   ("p" NIL "fuck"))
- ("p" NIL "end of markdown..."))))))
+ ("p" NIL "end of markdown...")))))
 
 ;; -----------------------------------------------------------------------------
 ;; temporary tests

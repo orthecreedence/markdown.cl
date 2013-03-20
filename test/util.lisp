@@ -15,7 +15,9 @@
 (defun tree (xml-str)
   "Given a string of (rootless) HTML, generate and return a list tree (using
    xmls)."
-  (xmls:parse (concat "<html>" xml-str "</html>")))
+  (let* ((str (cl-ppcre:regex-replace-all "&(?!(#[0-9]+|amp);)" xml-str "&amp;")))
+    (xmls:parse (concat "<html>" str "</html>"))))
 
 ;; define the test suite
 (def-suite markdown.cl-test :description "markdown.cl test suite")
+

@@ -40,7 +40,15 @@
 
 (defun stash-html-block-tags (str)
   "Finds all top-level HTML block-level tags and saves them for later."
-  (let* ((tree (xmls:parse (concatenate 'string "<markdown>" str "</markdown>")))
+  ;; note we have to convert all '&' to {{markdown.cl|amp}} so that XML parsing
+  ;; works. they are converted back both before markdown parsing and after HTML
+  ;; blocks are placed back into the doc
+  (let* ((str (cl-ppcre:regex-replace-all "&" str "{{markdown.cl|amp}}"))
+         ;; save code blocks from the impending HTML blockage
+         (str (cl-ppcre:regex-replace-all
+                (cl-ppcre:create-scanner "(^|\\n)( {4,})<" :single-line-mode t)
+                str "\\1\\2{{markdown.cl|gt}}"))
+         (tree (xmls:parse (concatenate 'string "<markdown>" str "</markdown>")))
          (children (cddr tree))
          (parts nil)
          (block-id 0))
@@ -49,13 +57,18 @@
              (push child parts))
             ((block-element-p (car child))
              (let ((id (incf block-id)))
-               (setf (gethash id *html-chunks*) (convert-xmls-to-html child))
+               (setf (gethash id *html-chunks*) (xmls:toxml child))
                (push (format nil "~a{{markdown.cl|htmlblock|~a}}~a" *nl* id *nl*) parts)))
             (t
              (push (convert-xmls-to-html child) parts))))
-    (reduce (lambda (a b)
-              (concatenate 'string a *nl* *nl* b))
-            (reverse parts))))
+    (let* ((str (reduce (lambda (a b)
+                          (concatenate 'string a *nl* *nl* b))
+                        (reverse parts)))
+           ;; convert our &'s back
+           (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|amp}}" str "&"))
+           ;; ...and fix code block HTML tags
+           (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str "<")))
+      str)))
 
 (defun replace-html-blocks (str)
   "Find any {{markdown.cl|htmlblock|...}} tags and replace them with their saved
@@ -71,7 +84,8 @@
              (id (parse-integer (subseq match (aref rs 1) (aref re 1))))
              (html (gethash id *html-chunks*)))
         (if html
-            html
+            ;; replace our markdown.cl amp tags with &'s
+            (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|amp}}" html "&")
             "")))))
 
 (defun pre-process-markdown-html (str)
