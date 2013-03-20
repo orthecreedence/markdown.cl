@@ -48,6 +48,7 @@
          (str (cl-ppcre:regex-replace-all
                 (cl-ppcre:create-scanner "(^|\\n)( {4,})<" :single-line-mode t)
                 str "\\1\\2{{markdown.cl|gt}}"))
+         (str (cl-ppcre:regex-replace-all "<br/?>" str "{{markdown.cl|br}}"))
          (tree (xmls:parse (concatenate 'string "<markdown>" str "</markdown>")))
          (children (cddr tree))
          (parts nil)
@@ -83,17 +84,21 @@
              (re (cadr regs))
              (id (parse-integer (subseq match (aref rs 1) (aref re 1))))
              (html (gethash id *html-chunks*)))
-        (if html
-            ;; replace our markdown.cl amp tags with &'s
-            (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|amp}}" html "&")
-            "")))))
+        (if html html "")))))
+
+(defun cleanup-markdown-tags (str)
+  (let* ((str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|amp}}" str "&"))
+         (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|br}}" str "<br/>")))
+    str))
 
 (defun pre-process-markdown-html (str)
   "This function performs any needed parsing on existing HTML of a markdown string."
-  (let ()
-    (stash-html-block-tags str)))
+  (stash-html-block-tags str))
 
 (defun post-process-markdown-html (str)
   "This function does any needed cleanup to marry inline HTML and markdown."
-  (replace-html-blocks str))
+  (let* ((str (replace-html-blocks str))
+         (str (cleanup-markdown-tags str)))
+    str))
+              
 
