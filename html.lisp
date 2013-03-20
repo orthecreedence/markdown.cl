@@ -10,27 +10,6 @@
   "Holds a hash table that harbors HTML tags from the destructive forces of
    markdown parsing until they are ready to be injected back into the document.")
 
-(defun convert-xmls-to-html (xmls-tree)
-  "Converts an HTML tree parsed by xmls back into HTML."
-  (let* ((tag-name (car xmls-tree))
-         (attr (cadr xmls-tree))
-         (children (cddr xmls-tree)))
-    (concatenate 'string
-                 "<" tag-name
-                 (reduce (lambda (a b)
-                           (concatenate 'string a " " (car b) "=\"" (cadr b) "\""))
-                         (reverse attr)
-                         :initial-value nil)
-                 ">"
-                 (reduce (lambda (a b)
-                           (let ((child (if (stringp b)
-                                            (concatenate 'string b)
-                                            (convert-xmls-to-html b))))
-                             (concatenate 'string a child)))
-                         children
-                         :initial-value nil)
-                 "</" tag-name ">")))
-
 (defun block-element-p (tag-name)
   "Test if a given HTML tag is a block-level element."
   (let ((tag-sym (if (symbolp tag-name)
@@ -62,7 +41,15 @@
                (setf (gethash id *html-chunks*) (xmls:toxml child))
                (push (format nil "~a{{markdown.cl|htmlblock|~a}}~a" *nl* id *nl*) parts)))
             (t
-             (push (xmls:toxml child) parts))))
+             ;; fix xmls' slefless act of converting <a href=""></a> into
+             ;; <a href=""/> (self-closing tags)
+             (let* ((child (append (list (car child))
+                                   (list (cadr child))
+                                   (list "{{markdown.cl|nil}}")
+                                   (cddr child)))
+                    (html (xmls:toxml child))
+                    (html (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|nil}}" html "")))
+               (push html parts)))))
     (let* ((str (reduce (lambda (&optional a b)
                           (concatenate 'string a *nl* *nl* b))
                         (reverse parts)))
@@ -103,5 +90,4 @@
   (let* ((str (replace-html-blocks str))
          (str (cleanup-markdown-tags str)))
     str))
-              
 
