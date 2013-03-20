@@ -1,8 +1,5 @@
 (in-package :markdown.cl)
 
-(defparameter *nl* (coerce #(#\newline) 'string)
-  "Holds a string of a single newline character.")
-
 (defparameter *link-references* nil
   "Holds a hash table mapping link ids to URLs.")
 
@@ -921,13 +918,18 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
   "Parse a markdown string into HTML."
   (when (string= (string-trim '(#\newline #\space) markdown-string) "")
     (return-from parse markdown-string))
-  (let* ((str (prepare-markdown-string markdown-string))
+  (let* ((*html-chunks* (if *html-chunks*
+                            *html-chunks*
+                            (make-hash-table :test #'eq)))
          (*link-references* (if *link-references*
                                 *link-references*
                                 (make-hash-table :test #'equal)))
          (*blockquote-tmp-storage* (if *blockquote-tmp-storage*
-                                            *blockquote-tmp-storage*
-                                            (make-hash-table :test #'eq)))
+                                       *blockquote-tmp-storage*
+                                       (make-hash-table :test #'eq)))
+         (str markdown-string)  ; i don't want to hear it
+         (str (pre-process-markdown-html str))
+         (str (prepare-markdown-string str))
          (handlers-pre-block '(parse-escaped-characters
                                gather-link-references
                                parse-atx-headers
@@ -949,7 +951,8 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                                  cleanup-newlines
                                  cleanup-hr
                                  cleanup-paragraphs
-                                 cleanup-escaped-characters)))
+                                 cleanup-escaped-characters
+                                 post-process-markdown-html)))
     (dolist (handler handlers-pre-block)
       (unless (find handler disable-parsers)
         (setf str (funcall handler str))))

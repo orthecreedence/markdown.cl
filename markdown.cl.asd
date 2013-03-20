@@ -3,9 +3,10 @@
   :license "MIT"
   :version "0.1.1"
   :description "A markdown parser for Common Lisp"
-  :depends-on (#:cl-ppcre)
+  :depends-on (#:cl-ppcre #:xmls)
   :components
   ((:file "package")
    (:file "util" :depends-on ("package"))
-   (:file "parser" :depends-on ("util"))))
+   (:file "html" :depends-on ("util"))
+   (:file "parser" :depends-on ("html"))))
 
