@@ -91,6 +91,70 @@ blockquote")))))
   ("li" NIL ("p" NIL "another")
    ("blockquote" NIL ("p" NIL "embedded quote, just for fun"))))))))
 
+(test html-blocks
+  "Test that HTML blocks embedded in markdown are properly formatted (ie ignored)."
+  (is (equal (tree (parse "
+My main header
+==============
+Gosh, gee golly, it sure is a nice day out, boy howdy!!
+
+You said it, Fred!! Let's go down to the creek and shove nighcrawlers
+in each others butts! I bet I can get 20 of 'em in yours this time!!!
+
+<blockquote>
+Little did the boys know that it wasn't just nightcrawlers going in
+their butts, for Big Ed, a convicted pedophile, had just taken up
+residence in a lonely tin hut at the edge of the creek.
+</blockquote>
+
+Gee whillickers, this is going to be fun!!
+
+<div>
+Yes, it is, thought Ed to *himself* as he spotted the boys approaching
+using his high-powered telescope. Yes, it is.
+</div>
+
+Suddenly, Fred tripped over what seemed to be a tree root.
+
+<pre><code>$object = 'root';
+$boys = 'fine';
+if(net_falls_over_boys())
+{
+    $object = 'tripwire';
+    $boys = 'fucked (quite literally)';
+}</code></pre>
+
+Uh oh.
+
+<span>Well *this* is a fine mess you've gotten us into, Randy.</span>
+"))
+'("html" NIL ("h1" NIL "My main header")
+ ("p" NIL "Gosh, gee golly, it sure is a nice day out, boy howdy!!")
+ ("p" NIL
+  "You said it, Fred!! Let's go down to the creek and shove nighcrawlers
+in each others butts! I bet I can get 20 of 'em in yours this time!!!")
+ ("blockquote" NIL
+  "Little did the boys know that it wasn't just nightcrawlers going in
+their butts, for Big Ed, a convicted pedophile, had just taken up
+residence in a lonely tin hut at the edge of the creek.")
+ ("p" NIL "Gee whillickers, this is going to be fun!!")
+ ("div" NIL
+  "Yes, it is, thought Ed to *himself* as he spotted the boys approaching
+using his high-powered telescope. Yes, it is.")
+ ("p" NIL "Suddenly, Fred tripped over what seemed to be a tree root.")
+ ("pre" NIL
+  ("code" NIL "$object = 'root';
+$boys = 'fine';
+if(net_falls_over_boys())
+{
+    $object = 'tripwire';
+    $boys = 'fucked (quite literally)';
+}"))
+ ("p" NIL "Uh oh.")
+ ("p" NIL
+  ("span" NIL "Well" ("em" NIL "this")
+   "is a fine mess you've gotten us into, Randy."))))))
+
 (test lists
   "Test a bunch of lists all crammed together in a pile."
   (let* ((str "
