@@ -802,7 +802,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 (defun parse-lists (str)
   "Parse lists (both bullet and number lists). First, normalizes them (which
    makes them a whole lot easier to parse) then recursively parses them."
-  (let* ((str (normalize-lists (normalize-lists str)))
+  (let* ((str (normalize-lists str))
          (str (parse-list-blocks str)))
     str))
 
@@ -842,6 +842,17 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 (defun parse-em (str)
   "Parse *, _, **, and __, but only in non-code blocks."
   (parse-not-in-code str 'do-parse-em))
+
+(defun do-parse-br (str)
+  "Parse <br> tags (when a line ends with two spaces)."
+  (cl-ppcre:regex-replace-all
+    (cl-ppcre:create-scanner "([^ ]+)  (\\n)" :single-line-mode t)
+    str
+    "\\1<br/>\\2"))
+
+(defun parse-br (str)
+  "Parse <br> tags (when a line ends with two spaces)."
+  (parse-not-in-code str 'do-parse-br))
 
 ;; -----------------------------------------------------------------------------
 ;; cleanup functions
@@ -941,6 +952,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                                convert-lazy-blockquote-to-standard))
          (handlers-post-block '(parse-blockquote
                                 parse-code
+                                parse-br
                                 parse-links
                                 parse-lists
                                 parse-paragraphs
