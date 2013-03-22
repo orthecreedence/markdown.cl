@@ -10,27 +10,6 @@
   "Holds a hash table that harbors HTML tags from the destructive forces of
    markdown parsing until they are ready to be injected back into the document.")
 
-(defun convert-xmls-to-html (xmls-tree)
-  "Converts an HTML tree parsed by xmls back into HTML."
-  (let* ((tag-name (car xmls-tree))
-         (attr (cadr xmls-tree))
-         (children (cddr xmls-tree)))
-    (concatenate 'string
-                 "<" tag-name
-                 (reduce (lambda (a b)
-                           (concatenate 'string a " " (car b) "=\"" (cadr b) "\""))
-                         (reverse attr)
-                         :initial-value nil)
-                 ">"
-                 (reduce (lambda (a b)
-                           (let ((child (if (stringp b)
-                                            (concatenate 'string b)
-                                            (convert-xmls-to-html b))))
-                             (concatenate 'string a child)))
-                         children
-                         :initial-value nil)
-                 "</" tag-name ">")))
-
 (defun block-element-p (tag-name)
   "Test if a given HTML tag is a block-level element."
   (let ((tag-sym (if (symbolp tag-name)
@@ -40,14 +19,15 @@
 
 (defun stash-html-block-tags (str)
   "Finds all top-level HTML block-level tags and saves them for later."
-  ;; note we have to convert all '&' to {{markdown.cl|amp}} so that XML parsing
-  ;; works. they are converted back both before markdown parsing and after HTML
-  ;; blocks are placed back into the doc
+  ;; note we have to convert all &, <, > to {{markdown.cl|amp,lt,gt}} so that
+  ;; XML parsing works. they are converted back both before markdown parsing and
+  ;; after HTML blocks are placed back into the doc
   (let* ((str (cl-ppcre:regex-replace-all "&" str "{{markdown.cl|amp}}"))
+         (str (do-parse-entities str :use-markdown-tags t))
          ;; save code blocks from the impending HTML blockage
          (str (cl-ppcre:regex-replace-all
                 (cl-ppcre:create-scanner "(^|\\n)( {4,})<" :single-line-mode t)
-                str "\\1\\2{{markdown.cl|gt}}"))
+                str "\\1\\2{{markdown.cl|lt}}"))
          (str (cl-ppcre:regex-replace-all "<br/?>" str "{{markdown.cl|br}}"))
          (tree (xmls:parse (concatenate 'string "<markdown>" str "</markdown>")))
          (children (cddr tree))
@@ -61,14 +41,22 @@
                (setf (gethash id *html-chunks*) (xmls:toxml child))
                (push (format nil "~a{{markdown.cl|htmlblock|~a}}~a" *nl* id *nl*) parts)))
             (t
-             (push (convert-xmls-to-html child) parts))))
-    (let* ((str (reduce (lambda (a b)
+             ;; fix xmls' slefless act of converting <a href=""></a> into
+             ;; <a href=""/> (self-closing tags)
+             (let* ((child (append (list (car child))
+                                   (list (cadr child))
+                                   (list "{{markdown.cl|nil}}")
+                                   (cddr child)))
+                    (html (xmls:toxml child))
+                    (html (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|nil}}" html "")))
+               (push html parts)))))
+    (let* ((str (reduce (lambda (&optional a b)
                           (concatenate 'string a *nl* *nl* b))
                         (reverse parts)))
-           ;; convert our &'s back
+           ;; convert escaped characters back (fixing code blocks in the process)
            (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|amp}}" str "&"))
-           ;; ...and fix code block HTML tags
-           (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str "<")))
+           (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|lt}}" str "<"))
+           (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str ">")))
       str)))
 
 (defun replace-html-blocks (str)
@@ -88,6 +76,8 @@
 
 (defun cleanup-markdown-tags (str)
   (let* ((str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|amp}}" str "&"))
+         (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|lt}}" str "<"))
+         (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str ">"))
          (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|br}}" str "<br/>")))
     str))
 
@@ -100,5 +90,4 @@
   (let* ((str (replace-html-blocks str))
          (str (cleanup-markdown-tags str)))
     str))
-              
 
