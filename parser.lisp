@@ -84,7 +84,7 @@
 ;; -----------------------------------------------------------------------------
 ;; code formatting
 ;; -----------------------------------------------------------------------------
-(defun parse-not-in-code (str parser-fn &key escape)
+(defun parse-not-in-code (str parser-fn &key escape in-code-fn)
   "Given a string and a parsing function, run the parsing function over the
    parts of the string that are not inside any code block.
    
@@ -104,13 +104,19 @@
                        (concatenate 'string a "{{"))
                      (cond ((zerop depth)
                             (funcall parser-fn b))
-                           (escape
-                            (let ((tag-end-pos (+ 2 (position #\} b))))
+                           ((or escape in-code-fn)
+                            (let* ((tag-end-pos (+ 2 (position #\} b)))
+                                   (str (subseq b tag-end-pos))
+                                   (str (if escape
+                                            (escape-html str)
+                                            str))
+                                   (str (if in-code-fn
+                                            (funcall in-code-fn str)
+                                            str)))
                               (concatenate 'string
                                            (subseq b 0 tag-end-pos)
-                                           (escape-html (subseq b tag-end-pos)))))
+                                           str)))
                            (t b))))
-                            
       parts :initial-value nil)))
 
 (defun format-code (str &key embedded)
@@ -840,8 +846,22 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
     str))
 
 (defun parse-em (str)
-  "Parse *, _, **, and __, but only in non-code blocks."
-  (parse-not-in-code str 'do-parse-em))
+  "Parse *, _, **, and __, but only in non-code blocks. It's tricky though,
+   because our <em>/<strong> elements must be able to span across <code> blocks.
+   What we do it replace any * objects in <code> blocks with a meta string,
+   process the em/strong tags, and then replace hte meta char. Works great."
+  (let* ((str (parse-not-in-code str 'identity
+                :in-code-fn (lambda (str)
+                              (cl-ppcre:regex-replace-all
+                                "\\*"
+                                str
+                                "{{markdown.cl|star}}"))))
+         (str (do-parse-em str))
+         (str (cl-ppcre:regex-replace-all
+                "{{markdown\\.cl\\|star}}"
+                str
+                "*")))
+    str))
 
 (defun do-parse-br (str)
   "Parse <br> tags (when a line ends with two spaces)."

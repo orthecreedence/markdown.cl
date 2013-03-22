@@ -1,6 +1,9 @@
 (in-package :markdown.cl-test)
 (in-suite markdown.cl-test)
 
+;; TODO: test that <em> and <strong> tags can span across <code> blocks:
+;;   *this should wrap `this code block`*
+
 (test links
   "Test a number of link/image styles."
   (is (equal (tree (parse "
