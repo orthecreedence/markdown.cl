@@ -835,14 +835,14 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 
 (defun do-parse-em (str)
   "Parse *, _, **, and __."
-  (let* ((scanner-em*-process (cl-ppcre:create-scanner "\\*(.*?)\\*" :single-line-mode t))
-         (scanner-em_-process (cl-ppcre:create-scanner "_(.*?)_" :single-line-mode t))
-         (scanner-strong*-process (cl-ppcre:create-scanner "\\*\\*(.*?)\\*\\*" :single-line-mode t))
+  (let* ((scanner-strong*-process (cl-ppcre:create-scanner "\\*\\*(.*?)\\*\\*" :single-line-mode t))
          (scanner-strong_-process (cl-ppcre:create-scanner "__(.*?)__" :single-line-mode t))
-         (str (cl-ppcre:regex-replace-all scanner-em*-process str "<em>\\1</em>"))
-         (str (cl-ppcre:regex-replace-all scanner-em_-process str "<em>\\1</em>"))
+         (scanner-em*-process (cl-ppcre:create-scanner "\\*(.*?)\\*" :single-line-mode t))
+         (scanner-em_-process (cl-ppcre:create-scanner "_(.*?)_" :single-line-mode t))
          (str (cl-ppcre:regex-replace-all scanner-strong*-process str "<strong>\\1</strong>"))
-         (str (cl-ppcre:regex-replace-all scanner-strong_-process str "<strong>\\1</strong>")))
+         (str (cl-ppcre:regex-replace-all scanner-strong_-process str "<strong>\\1</strong>"))
+         (str (cl-ppcre:regex-replace-all scanner-em*-process str "<em>\\1</em>"))
+         (str (cl-ppcre:regex-replace-all scanner-em_-process str "<em>\\1</em>")))
     str))
 
 (defun parse-em (str)
