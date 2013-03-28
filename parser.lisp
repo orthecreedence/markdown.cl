@@ -3,7 +3,7 @@
 (defparameter *link-references* nil
   "Holds a hash table mapping link ids to URLs.")
 
-(defparameter *blockquote-tmp-storage* nil
+(defparameter *tmp-storage* nil
   "Holds a hash table used for temporary blockquote storage.")
 
 ;; -----------------------------------------------------------------------------
@@ -34,7 +34,15 @@
   (cl-ppcre:regex-replace-all
     "\\\\([.\\\`*_\\[\\]{}#+!-])"
     str
-    "{{markdown.cl|escaped|\\1}}"))
+    ;"{{markdown.cl|escaped|\\1}}"
+    (lambda (match &rest regs)
+      (let* ((regs (cddddr regs))
+             (rs (car regs))
+             (re (cadr regs))
+             (escaped-char (subseq match (aref rs 0) (aref re 0)))
+             (id (format nil "esc-char-~a" (hash-table-count *tmp-storage*))))
+        (setf (gethash id *tmp-storage*) escaped-char)
+        (concatenate 'string "{{markdown.cl|escaped|" id "}}")))))
 
 (defun do-parse-entities (str &key use-markdown-tags)
   "Replace non-purposeful entities with escaped equivalents."
@@ -276,17 +284,17 @@
                          (blockquote (concatenate 'string *nl* blockquote))
                          (blockquote (parse-blockquote blockquote))
                          (blockquote (cl-ppcre:regex-replace-all scanner-clean-newlines blockquote *nl*)))
-                    (let ((blockquote-id (hash-table-count *blockquote-tmp-storage*)))
+                    (let ((blockquote-id (format nil "bq-~a" (hash-table-count *tmp-storage*))))
                       ;; save the blockquote for later
-                      (setf (gethash blockquote-id *blockquote-tmp-storage*) blockquote)
+                      (setf (gethash blockquote-id *tmp-storage*) blockquote)
                       ;; sew the original bullet onto the blockquote placeholder
-                      (concatenate 'string bullet *nl* *nl* "    {{markdown.cl|blockquote|" (write-to-string blockquote-id) "}}")))))))
+                      (concatenate 'string bullet *nl* *nl* "    {{markdown.cl|blockquote|" blockquote-id "}}")))))))
     (if (cl-ppcre:scan scanner-find-list-blockquote str)
         (parse-embedded-blockquote str)
         str)))
 
 (defun inject-saved-blockquotes (str)
-  (let* ((scanner-blockquote-placeholder (cl-ppcre:create-scanner "{{markdown\\.cl\\|blockquote\\|([^}]+)}}"
+  (let* ((scanner-blockquote-placeholder (cl-ppcre:create-scanner "{{markdown\\.cl\\|blockquote\\|(bq-[^}]+)}}"
                                                                   :multi-line-mode t)))
     (cl-ppcre:regex-replace-all
       scanner-blockquote-placeholder
@@ -295,8 +303,8 @@
         (let* ((regs (cddddr regs))
                (rs (car regs))
                (re (cadr regs))
-               (id (parse-integer (subseq match (aref rs 0) (aref re 0))))
-               (text (gethash id *blockquote-tmp-storage*))
+               (id (subseq match (aref rs 0) (aref re 0)))
+               (text (gethash id *tmp-storage*))
                (text (or text "")))
           text)))))
 
@@ -920,9 +928,14 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 (defun cleanup-escaped-characters (str)
   "Convert escaped characters back to non-escaped."
   (cl-ppcre:regex-replace-all
-    "{{markdown\\.cl\\|escaped\\|(.)}}"
+    "{{markdown\\.cl\\|escaped\\|(.+?)}}"
     str
-    "\\1"))
+    (lambda (match &rest regs)
+      (let* ((regs (cddddr regs))
+             (rs (car regs))
+             (re (cadr regs))
+             (id (subseq match (aref rs 0) (aref re 0))))
+        (gethash id *tmp-storage*)))))
 
 ;; -----------------------------------------------------------------------------
 ;; general markdown functions
@@ -955,9 +968,9 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
          (*link-references* (if *link-references*
                                 *link-references*
                                 (make-hash-table :test #'equal)))
-         (*blockquote-tmp-storage* (if *blockquote-tmp-storage*
-                                       *blockquote-tmp-storage*
-                                       (make-hash-table :test #'eq)))
+         (*tmp-storage* (if *tmp-storage*
+                            *tmp-storage*
+                            (make-hash-table :test #'equal)))
          (str markdown-string)  ; i don't want to hear it
          (str (pre-process-markdown-html str))
          (str (prepare-markdown-string str))
