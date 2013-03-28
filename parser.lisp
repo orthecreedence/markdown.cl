@@ -396,7 +396,8 @@
 (defun parse-links-self (str)
   "Parse links that are self contained (not a reference):
      [my link text](http://url.com \"title\")"
-  (let* ((scanner-links-self (cl-ppcre:create-scanner "!?\\[([^\\]]+)\\](\\n| )?\\(([^ ]+)( \"(.*?)\")?\\)")))
+  (let* ((scanner-links-self (cl-ppcre:create-scanner
+                               "!?\\[([^\\]]+)\\](\\n| )?\\(([^ ()]+)( \"(.*?)\")?\\)")))
     (cl-ppcre:regex-replace-all
       scanner-links-self
       str
