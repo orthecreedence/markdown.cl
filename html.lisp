@@ -26,7 +26,7 @@
          (str (do-parse-entities str :use-markdown-tags t))
          ;; save code blocks from the impending HTML blockage
          (str (cl-ppcre:regex-replace-all
-                (cl-ppcre:create-scanner "(^|\\n)( {4,})<" :single-line-mode t)
+                (cl-ppcre:create-scanner "(^|\\n\\n)( {4,})<" :single-line-mode t)
                 str "\\1\\2{{markdown.cl|lt}}"))
          (str (cl-ppcre:regex-replace-all "<br/?>" str "{{markdown.cl|br}}"))
          (tree (xmls:parse (concatenate 'string "<markdown>" str "</markdown>")))
