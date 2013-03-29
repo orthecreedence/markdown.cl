@@ -1,5 +1,6 @@
 (defpackage :markdown.cl
   (:use :cl)
   (:nicknames :markdown)
-  (:export #:parse
+  (:export #:error-parsing-html
+           #:parse
            #:parse-file))

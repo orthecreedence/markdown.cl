@@ -1,5 +1,8 @@
 (in-package :markdown.cl)
 
+(define-condition error-parsing-html (error) ()
+  (:documentation "Thrown then xmls cannot parse the HTML in a document."))
+
 (defparameter *block-level-elements*
   '(address article aside audio blockquote canvas dd 
     div dl fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup 
@@ -33,6 +36,8 @@
          (children (cddr tree))
          (parts nil)
          (block-id 0))
+    (unless children
+      (error 'error-parsing-html))
     (dolist (child children)
       (cond ((stringp child)
              (push child parts))
@@ -41,7 +46,7 @@
                (setf (gethash id *html-chunks*) (xmls:toxml child))
                (push (format nil "~a{{markdown.cl|htmlblock|~a}}~a" *nl* id *nl*) parts)))
             (t
-             ;; fix xmls' slefless act of converting <a href=""></a> into
+             ;; fix xmls' selfless act of converting <a href=""></a> into
              ;; <a href=""/> (self-closing tags)
              (let* ((child (append (list (car child))
                                    (list (cadr child))
