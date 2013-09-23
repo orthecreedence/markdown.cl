@@ -21,6 +21,13 @@
                      (intern (string-upcase tag-name) :markdown.cl))))
     (find tag-sym *block-level-elements*)))
 
+(defun fix-a-tags (str)
+  "XMLS mangles our <a> tags. Fix"
+  (cl-ppcre:regex-replace-all
+    (cl-ppcre:create-scanner "<a(([\\s\\n]*[a-zA-Z-]+=\".*?\")*)/>" :single-line-mode t)
+    str
+    (concatenate 'string "<a\\1></a>" *nl*)))
+
 (defun stash-html-block-tags (str)
   "Finds all top-level HTML block-level tags and saves them for later. Does so
    by incrementally searching for the next line starting with a block-level tag
@@ -73,7 +80,7 @@
             (let ((id (incf block-id)))
               (setf (gethash id *html-chunks*) (xmls:toxml child))
               (push (format nil "~a{{markdown.cl|htmlblock|~a}}~a" *nl* id *nl*) parts))
-            (push (xmls:toxml child) parts))
+            (push (fix-a-tags (xmls:toxml child)) parts))
         (let* ((next (mapcar
                        (lambda (child)
                          (if (stringp child)
