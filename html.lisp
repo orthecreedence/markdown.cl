@@ -1,7 +1,8 @@
 (in-package :markdown.cl)
 
 (define-condition error-parsing-html (error) ()
-  (:documentation "Thrown then xmls cannot parse the HTML in a document."))
+  (:documentation "Thrown then xmls cannot parse the HTML in a document (make
+                   sure your <img> tags are closed."))
 
 (defparameter *block-level-elements*
   '(address article aside audio blockquote canvas dd 
@@ -29,10 +30,30 @@
          (str (do-parse-entities str :use-markdown-tags t))
          ;; save code blocks from the impending HTML blockage
          (str (cl-ppcre:regex-replace-all
-                (cl-ppcre:create-scanner "(^|\\n\\n)( {4,})<" :single-line-mode t)
-                str "\\1\\2{{markdown.cl|lt}}"))
+                (cl-ppcre:create-scanner "(\\n+(( {4,}[^\\n]*\\n)+(?=\\n)))" :single-line-mode t)
+                str
+                (lambda (match &rest regs)
+                  (declare (ignore match))
+                  (let* ((regs (cddddr regs))
+                         (rs (car regs))
+                         (re (cadr regs))
+                         (text (subseq match (aref rs 0) (aref re 0))))
+                    (cl-ppcre:regex-replace-all "((^|\\n) +)<" text "\\1{{markdown.cl|lt}}")))))
          (str (cl-ppcre:regex-replace-all "<br/?>" str "{{markdown.cl|br}}"))
-         (tree (xmls:parse (concatenate 'string "<markdown>" str "</markdown>")))
+         ;; xmls hates non-closed image tags, so add a slash to the end of them
+         ;; (XHTML style)
+         (str (cl-ppcre:regex-replace-all
+                (cl-ppcre:create-scanner "(<img\\s+.*?>)" :single-line-mode t)
+                str
+                (lambda (match &rest regs)
+                  (declare (ignore match))
+                  (let* ((regs (cddddr regs))
+                         (rs (car regs))
+                         (re (cadr regs))
+                         (text (subseq match (aref rs 0) (aref re 0))))
+                    (cl-ppcre:regex-replace-all "/?>$" text "/>")))))
+         (xml-tree (concatenate 'string "<markdown>" str "</markdown>"))
+         (tree (xmls:parse xml-tree))
          (children (cddr tree))
          (parts nil)
          (block-id 0))
