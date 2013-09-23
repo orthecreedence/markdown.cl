@@ -322,11 +322,8 @@ end of markdown...
 "))
 '("html" NIL ("h1" NIL "header1")
  ("p" NIL "this is a paragraph
-html iz kewl"
-  ("code" NIL "&mdash;") "as shown in that code block
-it has"
-  ("code" NIL) "some code (which")
- ("p" NIL ("strong" NIL "use")) ("p" NIL ("code" NIL ")") "`")
+html iz kewl" ("code" NIL "&mdash;") "as shown in that code block
+it has" ("code" NIL "some code (which &lt;strong&gt;use&lt;/strong&gt; `)"))
  ("p" NIL "this is a paragraph"
   ("a" (("href" "http://mylinktest.com/why-links-r-kewl")) "with some")
   "links in it.

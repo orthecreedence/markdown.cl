@@ -7,7 +7,7 @@
 (defparameter *block-level-elements*
   '(address article aside audio blockquote canvas dd 
     div dl fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup 
-    hr noscript ol output p pre section table tfoot ul video)
+    hr noscript ol output p pre section table tfoot ul video script)
   "Stores all HTML tags considered block-level.")
 
 (defparameter *html-chunks* nil
@@ -22,68 +22,73 @@
     (find tag-sym *block-level-elements*)))
 
 (defun stash-html-block-tags (str)
-  "Finds all top-level HTML block-level tags and saves them for later."
-  ;; note we have to convert all &, <, > to {{markdown.cl|amp,lt,gt}} so that
-  ;; XML parsing works. they are converted back both before markdown parsing and
-  ;; after HTML blocks are placed back into the doc
-  (let* ((str (cl-ppcre:regex-replace-all "&" str "{{markdown.cl|amp}}"))
-         (str (do-parse-entities str :use-markdown-tags t))
-         ;; save code blocks from the impending HTML blockage
-         (str (cl-ppcre:regex-replace-all
-                (cl-ppcre:create-scanner "(\\n+(( {4,}[^\\n]*\\n)+(?=\\n)))" :single-line-mode t)
-                str
-                (lambda (match &rest regs)
-                  (declare (ignore match))
-                  (let* ((regs (cddddr regs))
-                         (rs (car regs))
-                         (re (cadr regs))
-                         (text (subseq match (aref rs 0) (aref re 0))))
-                    (cl-ppcre:regex-replace-all "((^|\\n) +)<" text "\\1{{markdown.cl|lt}}")))))
-         (str (cl-ppcre:regex-replace-all "<br/?>" str "{{markdown.cl|br}}"))
+  "Finds all top-level HTML block-level tags and saves them for later. Does so
+   by incrementally searching for the next line starting with a block-level tag
+   and using xmls to parse it, adding a placeholder in its stead. Inline
+   elements are just added back into the parts array (not saved). This allows
+   them to be markdown-processed. str is modified destructively as the loop
+   progresses, making sure we don't get stuck in endless loop finding the same
+   tags over again."
+  ;; create a scanner that searches for heml tags at the beginning of a line
+  (let* ((html-scanner (cl-ppcre:create-scanner
+                         "(^|\\n)<[\\w]+(\\s?[a-zA-Z-]+=\".*?\")*/?>"
+                         :single-line-mode t))
+         (parts nil)
+         (block-id 0)
          ;; xmls hates non-closed image tags, so add a slash to the end of them
          ;; (XHTML style)
          (str (cl-ppcre:regex-replace-all
                 (cl-ppcre:create-scanner "(<img\\s+.*?>)" :single-line-mode t)
                 str
                 (lambda (match &rest regs)
-                  (declare (ignore match))
                   (let* ((regs (cddddr regs))
                          (rs (car regs))
                          (re (cadr regs))
                          (text (subseq match (aref rs 0) (aref re 0))))
                     (cl-ppcre:regex-replace-all "/?>$" text "/>")))))
-         (xml-tree (concatenate 'string "<markdown>" str "</markdown>"))
-         (tree (xmls:parse xml-tree))
-         (children (cddr tree))
-         (parts nil)
-         (block-id 0))
-    (unless children
-      (error 'error-parsing-html))
-    (dolist (child children)
-      (cond ((stringp child)
-             (push child parts))
-            ((block-element-p (car child))
-             (let ((id (incf block-id)))
-               (setf (gethash id *html-chunks*) (xmls:toxml child))
-               (push (format nil "~a{{markdown.cl|htmlblock|~a}}~a" *nl* id *nl*) parts)))
-            (t
-             ;; fix xmls' selfless act of converting <a href=""></a> into
-             ;; <a href=""/> (self-closing tags)
-             (let* ((child (append (list (car child))
-                                   (list (cadr child))
-                                   (list "{{markdown.cl|nil}}")
-                                   (cddr child)))
-                    (html (xmls:toxml child))
-                    (html (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|nil}}" html "")))
-               (push html parts)))))
-    (let* ((str (reduce (lambda (&optional a b)
-                          (concatenate 'string a *nl* *nl* b))
-                        (reverse parts)))
-           ;; convert escaped characters back (fixing code blocks in the process)
-           (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|amp}}" str "&"))
-           (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|lt}}" str "<"))
-           (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str ">")))
-      str)))
+         ;; xmls also destroys any script tags with excessive escaping. give
+         ;; them safe passage using the block-replace method
+         (str (cl-ppcre:regex-replace-all
+                (cl-ppcre:create-scanner "(<script.*?</script>)" :single-line-mode t)
+                str
+                (lambda (match &rest regs)
+                  (let* ((regs (cddddr regs))
+                         (rs (car regs))
+                         (re (cadr regs))
+                         (text (subseq match (aref rs 0) (aref re 0)))
+                         (id (incf block-id)))
+                    (setf (gethash id *html-chunks*) text)
+                    (format nil "~a{{markdown.cl|htmlblock|~a}}~a" *nl* id *nl*))))))
+    (loop for pos = (cl-ppcre:scan html-scanner str)
+          while pos do
+      (push (subseq str 0 pos) parts)
+      (let* ((xml-tree (concatenate 'string "<cl-markdown>" (subseq str pos) "</cl-markdown>"))
+             (tree (xmls:parse xml-tree))
+             (children (cddr tree))
+             (child (car children))
+             (next (cdr children)))
+        (unless children
+          (error 'error-parsing-html))
+        (if (block-element-p (car child))
+            (let ((id (incf block-id)))
+              (setf (gethash id *html-chunks*) (xmls:toxml child))
+              (push (format nil "~a{{markdown.cl|htmlblock|~a}}~a" *nl* id *nl*) parts))
+            (push (xmls:toxml child) parts))
+        (let* ((next (mapcar
+                       (lambda (child)
+                         (if (stringp child)
+                             child
+                             (xmls:toxml child)))
+                       next))
+               (next (reduce (lambda (&optional a b)
+                               (concatenate 'string a *nl* *nl* b))
+                             next)))
+          (setf str next))))
+    (let* ((final (reduce (lambda (&optional a b)
+                            (concatenate 'string a *nl* *nl* b))
+                          (reverse parts)))
+           (final (concatenate 'string final str)))
+      final)))
 
 (defun replace-html-blocks (str)
   "Find any {{markdown.cl|htmlblock|...}} tags and replace them with their saved
@@ -113,7 +118,10 @@
 
 (defun post-process-markdown-html (str)
   "This function does any needed cleanup to marry inline HTML and markdown."
+  ;; note we do TWO passes of block replacement. this is intentional!!! in some
+  ;; instances a block will be nested in another (mainly script tags)
   (let* ((str (replace-html-blocks str))
+         (str (replace-html-blocks str))
          (str (cleanup-markdown-tags str)))
     str))
 
