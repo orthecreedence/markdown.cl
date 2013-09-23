@@ -8,7 +8,7 @@
 
 (test links
   "Test a number of link/image styles."
-  (is (equal (tree (parse "
+  (is (null (tree-diff (tree (parse "
 This is a paragraph with a ![panda][] picture of a [panda](http://wikipedia.com/pandas)
 in it. Pandas are a [strange][1] kind of animal that are bears but are nice. I often wonder
 why pandas are so [nice][2].
@@ -43,23 +43,23 @@ why pandas are so"
     ("alt" "ripping") ("src" "/images/rip.jpg")))
   "photo but
 they"
-  ("em" NIL "choose") "not to.")))))
+  ("em" NIL "choose") "not to."))))))
 
 (test blockquotes
   "Test a variety of blockquote styles."
-  (is (equal (tree (parse "
+  (is (null (tree-diff (tree (parse "
 > this is a simple
 > blockquote"))
 '("html" NIL ("blockquote" NIL ("p" NIL "this is a simple
-blockquote")))))
+blockquote"))))))
 
-  (is (equal (tree (parse "
+  (is (null (tree-diff (tree (parse "
 > this is a lazy
 blockquote"))
 '("html" NIL ("blockquote" NIL ("p" NIL "this is a lazy
-blockquote")))))
+blockquote"))))))
 
-  (is (equal (tree (parse "
+  (is (null (tree-diff (tree (parse "
 > this is an
 > > embedded
 > blockquote, and also has
@@ -67,9 +67,9 @@ blockquote")))))
 > - a list
 > - in it"))
 '("html" NIL ("blockquote" NIL ("p" NIL "this is an") ("blockquote" NIL ("p" NIL "embedded")) ("p" NIL "blockquote, and also has")
-              ("ul" NIL ("li" NIL "a list") ("li" NIL "in it"))))))
+              ("ul" NIL ("li" NIL "a list") ("li" NIL "in it")))))))
 
-  (is (equal (tree (parse "
+  (is (null (tree-diff (tree (parse "
 -   this is a paragraph list
 
     with two embedded
@@ -97,11 +97,11 @@ blockquote")))))
    ("blockquote" NIL ("p" NIL "should work fine")
     ("ol" NIL ("li" NIL "list") ("li" NIL "item"))))
   ("li" NIL ("p" NIL "another")
-   ("blockquote" NIL ("p" NIL "embedded quote, just for fun"))))))))
+   ("blockquote" NIL ("p" NIL "embedded quote, just for fun")))))))))
 
 (test html-blocks
   "Test that HTML blocks embedded in markdown are properly formatted (ie ignored)."
-  (is (equal (tree (parse "
+  (is (null (tree-diff (tree (parse "
 My main header
 ==============
 Gosh, gee golly, it sure is a nice day out, boy howdy!!
@@ -161,11 +161,11 @@ if(net_falls_over_boys())
  ("p" NIL "Uh oh.")
  ("p" NIL
   ("span" NIL "Well" ("em" NIL "this")
-   "is a fine mess you've gotten us into, Randy."))))))
+   "is a fine mess you've gotten us into, Randy.")))))))
 
 (test lists
   "Test a bunch of lists all crammed together in a pile."
-  (is (equal (tree (parse "
+  (is (null (tree-diff (tree (parse "
 -  bullet1 is a great bullet
   - sub bullet one has
   multiple lines!
@@ -242,11 +242,11 @@ line2"))))
   ("li" NIL ("p" NIL "and another here's a test")
    ("p" NIL "multi-paragraph list") ("p" NIL "item")))
  ("ul" NIL ("li" NIL ("p" NIL "paragraph")) ("li" NIL ("p" NIL "list"))
-  ("li" NIL ("p" NIL "items")))))))
+  ("li" NIL ("p" NIL "items"))))))))
 
 (test everything
   "Test many markdown parsers, when shoved together in a small space."
-(is (equal (tree (parse "
+(is (null (tree-diff (tree (parse "
 header1
 ====
 this is a paragraph
@@ -378,7 +378,7 @@ lol paragraph
 also 5 &gt; 4 normally"))
  ("blockquote" NIL ("p" NIL "poop") ("blockquote" NIL ("p" NIL "shit"))
   ("p" NIL "fuck"))
- ("p" NIL "end of markdown...")))))
+ ("p" NIL "end of markdown..."))))))
 
 ;; -----------------------------------------------------------------------------
 ;; temporary tests
