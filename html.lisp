@@ -18,6 +18,7 @@
   "Hide HTML entities from the HTML parser. It doesn't like them. It has the
    death penalty on 12 systems."
   (let* ((str (cl-ppcre:regex-replace-all "&(#[0-9]{1,5}|\\w{2,6});" str "{{markdown.cl|entity|\\1}}"))
+         (str (cl-ppcre:regex-replace-all "<br\\s?/?>" str "{{markdown.cl|br}}"))
          (str (cl-ppcre:regex-replace-all "&" str "{{markdown.cl|amp}}")))
     str))
 
