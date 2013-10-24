@@ -14,6 +14,13 @@
   "Holds a hash table that harbors HTML tags from the destructive forces of
    markdown parsing until they are ready to be injected back into the document.")
 
+(defun escape-html-entities (str)
+  "Hide HTML entities from the HTML parser. It doesn't like them. It has the
+   death penalty on 12 systems."
+  (let* ((str (cl-ppcre:regex-replace-all "&(#[0-9]{1,5}|\\w{2,6});" str "{{markdown.cl|entity|\\1}}"))
+         (str (cl-ppcre:regex-replace-all "&" str "{{markdown.cl|amp}}")))
+    str))
+
 (defun block-element-p (tag-name)
   "Test if a given HTML tag is a block-level element."
   (let ((tag-sym (if (symbolp tag-name)
@@ -79,7 +86,7 @@
         (if (block-element-p (car child))
             (let ((id (incf block-id)))
               (setf (gethash id *html-chunks*) (xmls:toxml child))
-              (push (format nil "~a{{markdown.cl|htmlblock|~a}}~a" *nl* id *nl*) parts))
+              (push (format nil "~a~a{{markdown.cl|htmlblock|~a}}~a~a" *nl* *nl* id *nl* *nl*) parts))
             (push (fix-a-tags (xmls:toxml child)) parts))
         (let* ((next (mapcar
                        (lambda (child)
@@ -114,6 +121,7 @@
 
 (defun cleanup-markdown-tags (str)
   (let* ((str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|amp}}" str "&"))
+         (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|entity\\|(.*?)}}" str "&\\1;"))
          (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|lt}}" str "<"))
          (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|gt}}" str ">"))
          (str (cl-ppcre:regex-replace-all "{{markdown\\.cl\\|br}}" str "<br/>")))
@@ -121,7 +129,9 @@
 
 (defun pre-process-markdown-html (str)
   "This function performs any needed parsing on existing HTML of a markdown string."
-  (stash-html-block-tags str))
+  (let* ((str (escape-html-entities str))
+         (str (stash-html-block-tags str)))
+    str))
 
 (defun post-process-markdown-html (str)
   "This function does any needed cleanup to marry inline HTML and markdown."
