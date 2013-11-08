@@ -78,10 +78,16 @@
           while pos do
       (push (subseq str 0 pos) parts)
       (let* ((xml-tree (concatenate 'string "<cl-markdown>" (subseq str pos) "</cl-markdown>"))
-             (tree (xmls:parse xml-tree))
+             (tree (xmls:parse xml-tree :compress-whitespace nil))
              (children (cddr tree))
              (child (car children))
              (next (cdr children)))
+        ;; push any non-html into parts, updating children as we go along
+        (loop while (stringp child) do
+          (push child parts)
+          (setf children (cdr children)
+                next (cdr children)
+                child (car children)))
         (unless children
           (error 'error-parsing-html))
         (if (block-element-p (car child))
@@ -100,7 +106,7 @@
                              next)))
           (setf str next))))
     (let* ((final (reduce (lambda (&optional a b)
-                            (concatenate 'string a *nl* *nl* b *nl* *nl*))
+                            (concatenate 'string a *nl* *nl* b))
                           (reverse parts)))
            (final (concatenate 'string final str)))
       final)))
