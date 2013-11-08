@@ -100,7 +100,7 @@
                              next)))
           (setf str next))))
     (let* ((final (reduce (lambda (&optional a b)
-                            (concatenate 'string a *nl* *nl* b))
+                            (concatenate 'string a *nl* *nl* b *nl* *nl*))
                           (reverse parts)))
            (final (concatenate 'string final str)))
       final)))
