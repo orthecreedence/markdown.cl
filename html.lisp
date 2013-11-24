@@ -128,7 +128,6 @@
              (re (cadr regs))
              (id (parse-integer (subseq match (aref rs 1) (aref re 1))))
              (html (gethash id *html-chunks*)))
-        (format t "match: ~a~%" match)
         (if html html "")))))
 
 (defun cleanup-markdown-tags (str)
