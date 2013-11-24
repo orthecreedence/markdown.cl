@@ -36,6 +36,10 @@
     str
     (concatenate 'string "<a\\1></a>" *nl*)))
 
+(defun fix-inline-links (str)
+  "Fix <http://teh-link.com> links, which messes with XMLS' mind."
+  (cl-ppcre:regex-replace-all "<([a-z]+://[^ ]+)>" str "<a href=\"\\1\">\\1</a>"))
+
 (defun stash-html-block-tags (str)
   "Finds all top-level HTML block-level tags and saves them for later. Does so
    by incrementally searching for the next line starting with a block-level tag
@@ -137,6 +141,7 @@
 (defun pre-process-markdown-html (str)
   "This function performs any needed parsing on existing HTML of a markdown string."
   (let* ((str (escape-html-entities str))
+         (str (fix-inline-links str))
          (str (stash-html-block-tags str)))
     str))
 
@@ -145,7 +150,7 @@
   ;; note we do TWO passes of block replacement. this is intentional!!! in some
   ;; instances a block will be nested in another (mainly script tags)
   (let* ((str (replace-html-blocks str))
-         (str (replace-html-blocks str))
+         (str (fix-inline-links str))
          (str (cleanup-markdown-tags str)))
     str))
 

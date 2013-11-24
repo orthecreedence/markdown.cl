@@ -1,7 +1,7 @@
 (asdf:defsystem markdown.cl
   :author "Andrew Danger Lyon <orthecreedence@gmail.com>"
   :license "MIT"
-  :version "0.1.4"
+  :version "0.1.5"
   :description "A markdown parser for Common Lisp"
   :depends-on (#:cl-ppcre #:xmls)
   :components
