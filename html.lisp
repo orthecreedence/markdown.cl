@@ -128,6 +128,7 @@
              (re (cadr regs))
              (id (parse-integer (subseq match (aref rs 1) (aref re 1))))
              (html (gethash id *html-chunks*)))
+        (format t "match: ~a~%" match)
         (if html html "")))))
 
 (defun cleanup-markdown-tags (str)
@@ -150,6 +151,8 @@
   ;; note we do TWO passes of block replacement. this is intentional!!! in some
   ;; instances a block will be nested in another (mainly script tags)
   (let* ((str (replace-html-blocks str))
+         (str (replace-html-blocks str))
+         (str (replace-html-blocks str))
          (str (fix-inline-links str))
          (str (cleanup-markdown-tags str)))
     str))
