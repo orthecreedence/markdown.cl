@@ -428,13 +428,29 @@
                 "<a href=\"mailto:\\1\">\\1</a>"
                 :preserve-case t)))
     str))
-  
+
+(defun escape-links-href (str)
+  "Escape any underscores in href=... text so it's not replaced with <em>s"
+  (cl-ppcre:regex-replace-all
+    "(href=\".*?\")"
+    str
+    (lambda (match &rest regs)
+      (let* ((regs (cddddr regs))
+             (rs (car regs))
+             (re (cadr regs))
+             (id "esc-char-underscore")
+             (href (subseq match (aref rs 0) (aref re 0)))
+             (href (cl-ppcre:regex-replace-all "_" href (concatenate 'string "{{markdown.cl|escaped|" id "}}"))))
+        (setf (gethash id *tmp-storage*) "_")
+        href))))
+
 (defun parse-links (str)
   "Parse all link styles. It's important to note that because the image/link
    syntax is so similar, the following parsers handle both images and links."
   (let* ((str (parse-links-ref str))
          (str (parse-links-self str))
-         (str (parse-quick-links str)))
+         (str (parse-quick-links str))
+         (str (escape-links-href str)))
     str))
 
 ;; -----------------------------------------------------------------------------
