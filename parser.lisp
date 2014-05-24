@@ -447,9 +447,9 @@
 (defun parse-links (str)
   "Parse all link styles. It's important to note that because the image/link
    syntax is so similar, the following parsers handle both images and links."
-  (let* ((str (parse-links-ref str))
+  (let* ((str (parse-quick-links str))
+         (str (parse-links-ref str))
          (str (parse-links-self str))
-         (str (parse-quick-links str))
          (str (escape-links-href str)))
     str))
 
