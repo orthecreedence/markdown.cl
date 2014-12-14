@@ -815,20 +815,18 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 
           ;; nope, only one part (the main list)
           (let ((str (car parts)))
-            (cond ((and list-pos (<= list-pos 1))
-                   ;; our main list is at the starting position
-                   (format-lists (subseq str list-pos) indent))
-                  (list-pos
-                    ;; our main list is somewhere in the middle of this block.
-                    ;; this probably shouldn't happen, but "probably" and
-                    ;; "shouldn't" don't mix well with programming, so let's
-                    ;; test for it, splitting the first non-list section
-                    ;; (called "garble") from the list, and parsing only the
-                    ;; list.
-                    (let ((garble (subseq str 0 list-pos))
-                          (list-text (subseq str list-pos)))
-                      (concatenate 'string garble (parse-list-blocks list-text))))
-                  (t str)))))))
+            (if (<= list-pos 1)
+                ;; our main list is at the starting position
+                (format-lists (subseq str list-pos) indent)
+                ;; our main list is somewhere in the middle of this block.
+                ;; this probably shouldn't happen, but "probably" and
+                ;; "shouldn't" don't mix well with programming, so let's
+                ;; test for it, splitting the first non-list section
+                ;; (called "garble") from the list, and parsing only the
+                ;; list.
+                (let ((garble (subseq str 0 list-pos))
+                      (list-text (subseq str list-pos)))
+                  (concatenate 'string garble (parse-list-blocks list-text)))))))))
 
 (defun parse-lists (str)
   "Parse lists (both bullet and number lists). First, normalizes them (which
