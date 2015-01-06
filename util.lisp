@@ -1,4 +1,4 @@
-(in-package :markdown)
+(in-package :markdown.cl)
 
 (defparameter *nl* (coerce #(#\newline) 'string)
   "Holds a string of a single newline character.")
