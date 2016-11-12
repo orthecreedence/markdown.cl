@@ -898,34 +898,6 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
   (parse-not-in-code str 'do-parse-br))
 
 ;; -----------------------------------------------------------------------------
-;; Parse Table (Github format)
-;; -----------------------------------------------------------------------------
-
-(defun parse-table (str)
-  "Parse github format tables. Takes a string formated per the github version of markdown. It returns an html table if the first character in the first line is a pipe. Otherwise is returns the string. See https://help.github.com/articles/organizing-information-with-tables/ except that the pipes on either side are not optional. The columns can be aligned right, center or left if colons are inserted on the sides of the hyphens within the header row. At the moment you cannot use a pipe as content within the cell."
-  (if (string= "|" (string-trim '(#\SPACE #\newline) str) :start1 0 :end1 1 :start2 0 :end2 1 )
-      (let* ((table-lst (split-sequence:split-sequence #\newline str :remove-empty-subseqs t))
-             (header (split-sequence:split-sequence #\| (pop table-lst)  :remove-empty-subseqs t))
-             (alignment (loop for x in 
-                             (split-sequence:split-sequence #\| 
-                                                            (pop table-lst) 
-                                                            :remove-empty-subseqs t) collect 
-                             (string-trim " " x))))
-        
-        (format nil "<table><theader><tr>~{~a~}</tr></theader><tbody>~%~{<tr>~{<td>~a</td>~}</tr>~}</tbody></table>"
-                (loop for x in alignment for y in header collect 
-                     (cond ((and (string= ":-" (subseq x 0 2))
-                                 (string= "-:" (subseq x (- (length x) 2))))
-                            (concatenate 'string "<th align=\"center\">" y "</th>"))
-                           ((string= ":-" (subseq x 0 2))
-                            (concatenate 'string "<th align=\"left\">" y "</th>"))
-                           ((string= "-:" (subseq x (- (length x) 2)))
-                            (concatenate 'string "<th align=\"right\">" y "</th>"))
-                           (t (concatenate 'string "<th>" y "</th>"))))
-                (loop for x in table-lst collect 
-                     (split-sequence:split-sequence #\| x :remove-empty-subseqs t ))))
-      str))
-;; -----------------------------------------------------------------------------
 ;; cleanup functions
 ;; -----------------------------------------------------------------------------
 (defun cleanup-code (str)
@@ -1031,7 +1003,6 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                                 parse-br
                                 parse-links
                                 parse-lists
-                                parse-table
                                 parse-paragraphs
                                 parse-inline-code
                                 parse-em))
