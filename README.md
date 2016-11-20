@@ -1,7 +1,9 @@
 markdown.cl
 ===========
 This is a [markdown](http://daringfireball.net/projects/markdown/syntax) parsing
-library for Common Lisp. The goal is to provide a very simple interface for
+library for Common Lisp. It also parses table markdown using the github syntax. 
+
+The goal is to provide a very simple interface for
 turning markdown into valid HTML.
 
 It currently doesn't support plugins or hooks or anything of that kind. I'd like
