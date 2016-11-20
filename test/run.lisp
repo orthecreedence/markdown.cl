@@ -2,4 +2,5 @@
 
 (defun run-tests ()
   (run! 'markdown.cl-test)
-  (run! 'markdown.cl-table-test))
+  (run! 'markdown.cl-table-test)
+  (run! 'markdown.cl-extra-tests))

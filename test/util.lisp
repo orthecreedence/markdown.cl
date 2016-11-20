@@ -40,4 +40,5 @@
 ;; define the test suite
 (def-suite markdown.cl-test :description "markdown.cl test suite")
 (def-suite markdown.cl-table-test :description "table test suite")
+(def-suite markdown.cl-extra-tests :description "more tests")
 

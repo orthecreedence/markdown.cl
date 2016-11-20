@@ -10,5 +10,6 @@
     :components ((:file "util")
                  (:file "markdown")
                  (:file "table-tests")
+                 (:file "extra-tests")
                  (:file "run")))))
 
