@@ -1,5 +1,5 @@
 (defpackage :markdown.cl-test
-  (:use :cl :eos :markdown.cl)
+  (:use :cl :fiveam :markdown.cl)
   (:nicknames :markdown-test)
   (:export #:run-tests))
 (in-package :markdown.cl-test)
@@ -39,5 +39,6 @@
 
 ;; define the test suite
 (def-suite markdown.cl-test :description "markdown.cl test suite")
-
+(def-suite markdown.cl-table-test :description "table test suite")
+(def-suite markdown.cl-extra-tests :description "more tests")
 

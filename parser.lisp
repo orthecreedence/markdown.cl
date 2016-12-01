@@ -898,6 +898,49 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
   (parse-not-in-code str 'do-parse-br))
 
 ;; -----------------------------------------------------------------------------
+;; table parsing following github format
+;; -----------------------------------------------------------------------------
+
+(defun parse-table (str)
+  "Parse github format tables. Takes a string formated per the github version of markdown. It returns an html table if the block contains a pipe character and the second non-whitespace line in the block contains at least three consecutive dashes e.g. '---'. Otherwise it returns the original string. See https://help.github.com/articles/organizing-information-with-tables/. The columns can be aligned right, center or left if colons are inserted on the sides of the hyphens within the header row. At the moment you cannot use a pipe as content within the cell."
+  (if (and (find #\| str) (cl-ppcre:scan "---" str))
+      (let* ((table-lst (split-sequence:split-sequence #\newline str :remove-empty-subseqs t))
+             (first-line (pop table-lst)) ; sometimes we end up with an almost blank first line in the block
+             (headings (split-sequence:split-sequence #\| (if (find #\| first-line)
+                                                              first-line
+                                                              (pop table-lst))
+                                                      :remove-empty-subseqs t))
+             (header (pop table-lst))
+             (tablep (and (find #\| header)(cl-ppcre:scan "---" header)))
+             (alignment (when tablep
+                          (loop for x in 
+                               (split-sequence:split-sequence #\| 
+                                                              header 
+                                                              :remove-empty-subseqs t)
+                             collect 
+                               (string-trim " " x)))))
+        (when alignment 
+          (format nil "<table>
+  <theader>
+    <tr>~{~a~}</tr>
+  </theader>
+  <tbody>~%~{    <tr>~{<td>~a</td>~}</tr>~%~}
+  </tbody>
+</table>"
+                  (loop for x in alignment for y in headings collect
+                       (cond ((and (string= ":-" (subseq x 0 2))
+                                   (string= "-:" (subseq x (- (length x) 2))))
+                              (concatenate 'string "<th align=\"center\">" y "</th>"))
+                             ((string= ":-" (subseq x 0 2))
+                              (concatenate 'string "<th align=\"left\">" y "</th>"))
+                             ((string= "-:" (subseq x (- (length x) 2)))
+                              (concatenate 'string "<th align=\"right\">" y "</th>"))
+                             (t (concatenate 'string "<th>" y "</th>"))))
+                  (loop for x in table-lst collect 
+                       (split-sequence:split-sequence #\| x :remove-empty-subseqs t )))))
+      str))
+
+;; -----------------------------------------------------------------------------
 ;; cleanup functions
 ;; -----------------------------------------------------------------------------
 (defun cleanup-code (str)
@@ -1002,6 +1045,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                                 parse-code
                                 parse-br
                                 parse-links
+                                parse-table
                                 parse-lists
                                 parse-paragraphs
                                 parse-inline-code
