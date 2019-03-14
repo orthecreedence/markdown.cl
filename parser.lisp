@@ -55,19 +55,19 @@
 
 (defun parse-entities (str)
   "On top of parsing entities:
-   
+
    I am a sicko & a perv   =>   I am a sicko &amp; a perv
    Dogs > cats             =>   Dogs &gt; cats
    <em>I'm the best</em>   =>   <em>I'm the best</em>
-   
+
    also escape the inside of <code> blocks:
-   
+
    <code><div>&copy;</div></code>
-   
+
    becomes:
-   
+
    <code>&lt;div&gt;&amp;copy;&lt;/div&gt;</code>
-   
+
    It does this using the parse-not-in-code function, which operates inside code
    blocks, using do-parse-entities outside code blocks, and escaping everything
    inside code blocks."
@@ -95,7 +95,7 @@
 (defun parse-not-in-code (str parser-fn &key escape in-code-fn)
   "Given a string and a parsing function, run the parsing function over the
    parts of the string that are not inside any code block.
-   
+
    Also has the ability to escape the internals of code blocks."
   (let ((parts (cl-ppcre:split
                  (cl-ppcre:create-scanner "{{(?=markdown\\.cl\\|code)" :multi-line-mode t)
@@ -207,14 +207,14 @@
 
 (defun convert-lazy-blockquote-to-standard (str)
   "Converts a lazy blockquote:
-   
+
    > this a blockquote that
    spans multiple lines but
    im too lazy to add the '>'
    at the beginning of each line
-   
+
    into:
-   
+
    > this a blockquote that
    > spans multiple lines but
    > im too lazy to add the '>'
@@ -244,7 +244,7 @@
    otherwise things can get wonky when parsing lists. The idea is to find
    blockquotes that are embedded in lists *before* the lists are processed, then
    turn them into what the list parser views as a standard paragraph.
-   
+
    Instead of injecting embedded blockquotes directly into the list string, they
    are saved in a hash table and injected afterwards for more accurate parsing."
   (let* ((scanner-find-list-blockquote
@@ -323,7 +323,7 @@
 ;; -----------------------------------------------------------------------------
 (defun gather-link-references (str)
   "Look for any link references in the document:
-   
+
    [link-id]: http://my-url.com
    [4]: http://my-link.com (optional title)
    [mylink]: http://my-url.com/lol 'kewl link brah'
@@ -331,7 +331,7 @@
 
    and parse them into the *link-references* hash table. The data will be pulled
    out when parse-links is called.
-   
+
    Note that as a side effect, this also gathers image references =]."
   (let* ((scanner-find-link-refs (cl-ppcre:create-scanner
                                    "\\n {0,3}\\[([^\\]]+)\\]: +([^\\s]+)( *\\n? *[\"'(](.*?)[\"')])? *"
@@ -474,13 +474,13 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 
 (defun format-html-blocks-in-paragraph (str)
   "This is a very helpful function which turns:
-   
+
    <p>this is my text<div>this is inside a block</div> more text</p>
-   
+
    into:
-   
+
    <p>this is my text</p><div>this is inside a block</div><p>more text</p>
-   
+
    In other words, it unwraps <p> tags from around HTML block elements, and does
    so such that all text between the first block tag found and after the last
    block tag found is left untouched (and unwrapped by <p>)."
@@ -537,7 +537,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
    added in paragraph tags, it will skip the block *unless* the pre-formatted
    key arg is T (meaning that the string being passed in has paragraph tags
    in it that need to be dealt with).
-   
+
    This function also does its best to clean the output by ridding us of empty
    paragraph blocks."
   (let ((has-paragraphs-already-p (search "{{markdown.cl|paragraph|open}}" str)))
@@ -564,7 +564,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 ;; -----------------------------------------------------------------------------
 (defun parse-setext-headers (str)
   "Parse setext headers:
-   
+
    This will be an h1
    =================="
   (cl-ppcre:regex-replace-all
@@ -583,7 +583,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 
 (defun parse-atx-headers (str)
   "Parses ATX-style headers:
-   
+
    ### This will be an h3 tag lol"
   (cl-ppcre:regex-replace-all
     (cl-ppcre:create-scanner "\\n(#{1,6})\\s*(.+?)\\s*(#+)?\\n" :case-insensitive-mode t :single-line-mode t)
@@ -596,7 +596,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
              (tag (format nil "h~a" num-hashes))
              (text (subseq match (aref rs 1) (aref re 1))))
         (concatenate 'string *nl* *nl* "<" tag ">" text "</" tag ">" *nl* *nl*)))))
-  
+
 ;; -----------------------------------------------------------------------------
 ;; list formatting
 ;; -----------------------------------------------------------------------------
@@ -645,13 +645,13 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
 (defun join-list-lines (str)
   "Turns lists broken into multiple lines into (per item) so that there's one
    line per item:
-   
+
    - my list item
    broken into multiple
    lines
-   
+
    becomes
-   
+
    - my list item broken into multiple lines"
   (let* ((scanner-join (cl-ppcre:create-scanner
                          "(\\n\\s*([*+-]|[0-9]+\\. )[^\\n]+)\\n\\s*(?!\\s*([*+-]|[0-9]+\\. ))"
@@ -688,16 +688,16 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
   "This is the function that actually makes lists happen. Once all the blocks
    have been diced up into neat little packages ready for formatting, they are
    handed off to format-lists.
-   
+
    This function is responsible for adding the <ul>/<ol>/<li> tags around list
    items, making sure to only do this for items using the correct indentation
    level.
-   
+
    List items inject any saved blockquotes (via inject-saved-blockquotes) before
    moving on to paragraph processing. This step is essential because a lot of
    the blockquote formatting can screw up the splitting of list items correctly,
    resulting in <p> blocks in really weird places.
-   
+
    List items are run through the paragraph filters, have a minimal amount of
    formatting applied to make sure the recursion goes smoothly, and then are
    recursively concated onto the final string."
@@ -767,7 +767,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
   "This function takes a list block, and splits it into sub-blocks depending on
    list type (in other words, if a numbered list directly follows a normal list,
    the two are processed separately). This is done recursively.
-   
+
    It also detects the amount of intent the list uses, which it sends into
    `format-lists` when an entire block has been singled out."
   (let* ((str (concatenate 'string *nl* (string-left-trim #(#\newline) str)))
@@ -801,7 +801,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                                 "-"))
            ;; split up the list sections (only split the first different list
            ;; type)
-           (section-splitter (cl-ppcre:create-scanner 
+           (section-splitter (cl-ppcre:create-scanner
                        (format nil "^(?= {~a}~a)" (max 0 (1- indent)) split-type-char)
                        :multi-line-mode t))
            (parts (cl-ppcre:split section-splitter str :limit 2)))
@@ -872,18 +872,26 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
   "Parse *, _, **, and __, but only in non-code blocks. It's tricky though,
    because our <em>/<strong> elements must be able to span across <code> blocks.
    What we do it replace any * objects in <code> blocks with a meta string,
-   process the em/strong tags, and then replace hte meta char. Works great."
+   process the em/strong tags, and then replace the meta char. Works great."
   (let* ((str (parse-not-in-code str 'identity
                 :in-code-fn (lambda (str)
-                              (cl-ppcre:regex-replace-all
-                                "\\*"
-                                str
-                                "{{markdown.cl|star}}"))))
+                              (let ((str (cl-ppcre:regex-replace-all
+                                          "_"
+                                          str
+                                          "{{markdown.cl|underscore}}")))
+                                (cl-ppcre:regex-replace-all
+                                 "\\*"
+                                 str
+                                 "{{markdown.cl|star}}")))))
          (str (do-parse-em str))
          (str (cl-ppcre:regex-replace-all
                 "{{markdown\\.cl\\|star}}"
                 str
-                "*")))
+                "*"))
+         (str (cl-ppcre:regex-replace-all
+               "{{markdown\\.cl\\|underscore}}"
+               str
+               "_")))
     str))
 
 (defun do-parse-br (str)
@@ -913,13 +921,13 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
              (header (pop table-lst))
              (tablep (and (find #\| header)(cl-ppcre:scan "---" header)))
              (alignment (when tablep
-                          (loop for x in 
-                               (split-sequence:split-sequence #\| 
-                                                              header 
+                          (loop for x in
+                               (split-sequence:split-sequence #\|
+                                                              header
                                                               :remove-empty-subseqs t)
-                             collect 
+                             collect
                                (string-trim " " x)))))
-        (when alignment 
+        (when alignment
           (format nil "<table>
   <theader>
     <tr>~{~a~}</tr>
@@ -936,7 +944,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
                              ((string= "-:" (subseq x (- (length x) 2)))
                               (concatenate 'string "<th align=\"right\">" y "</th>"))
                              (t (concatenate 'string "<th>" y "</th>"))))
-                  (loop for x in table-lst collect 
+                  (loop for x in table-lst collect
                        (split-sequence:split-sequence #\| x :remove-empty-subseqs t )))))
       str))
 
@@ -1002,7 +1010,7 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
   "A lot of the regular expressions, in order to maintain simplicity, expect the
    strings they are given to be formatted in a certain way. For instance,
    instead of testing for (^|\\n), if every string is started with a \\n, then
-   we can just test for \\n (and leave out testing for the beginning of the 
+   we can just test for \\n (and leave out testing for the beginning of the
    string)."
   (let* ((scanner-normalize-newlines (cl-ppcre:create-scanner "[\\r\\n]" :single-line-mode t))
          (scanner-normalize-tabs (cl-ppcre:create-scanner "\\t"))
@@ -1085,4 +1093,3 @@ hr|noscript|ol|output|p|pre|section|table|tfoot|ul|video)>"
   "Parse a markdown file into HTML (returned as a string)."
   (let ((contents (file-contents path)))
     (parse contents :disable-parsers disable-parsers)))
-
