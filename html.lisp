@@ -83,7 +83,7 @@
       (push (subseq str 0 pos) parts)
       (let* ((xml-tree (concatenate 'string "<cl-markdown>" (subseq str pos) "</cl-markdown>"))
              (tree (xmls:parse xml-tree :compress-whitespace nil))
-             (children (cddr tree))
+             (children (xmls:node-children tree))
              (child (car children))
              (next (cdr children)))
         ;; push any non-html into parts, updating children as we go along
@@ -94,7 +94,7 @@
                 child (car children)))
         (unless children
           (error 'error-parsing-html))
-        (if (block-element-p (car child))
+        (if (block-element-p (xmls:node-name child))
             (let ((id (incf block-id)))
               (setf (gethash id *html-chunks*) (xmls:toxml child))
               (push (format nil "~a~a{{markdown.cl|htmlblock|~a}}~a~a" *nl* *nl* id *nl* *nl*) parts))
